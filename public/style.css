@@ -1,0 +1,601 @@
+/* ==========================================================================
+   AgentVox Dashboard - Dark Theme
+   ========================================================================== */
+
+:root {
+  --bg-primary: #0b0d10;
+  --bg-secondary: #12151a;
+  --bg-card: #161a21;
+  --bg-card-hover: #1a1f28;
+  --border-primary: #1e2330;
+  --border-subtle: #171c25;
+  --text-primary: #e2e6ed;
+  --text-secondary: #8b95a8;
+  --text-muted: #555e70;
+  --text-dim: #3d4555;
+
+  /* Source colors */
+  --claude-code: #d4a574;
+  --claude-code-bg: rgba(212, 165, 116, 0.12);
+  --claude-code-border: rgba(212, 165, 116, 0.25);
+  --codex: #6eaaf5;
+  --codex-bg: rgba(110, 170, 245, 0.12);
+  --codex-border: rgba(110, 170, 245, 0.25);
+  --omni: #a78bfa;
+  --omni-bg: rgba(167, 139, 250, 0.12);
+  --omni-border: rgba(167, 139, 250, 0.25);
+  --custom: #7dd3a8;
+  --custom-bg: rgba(125, 211, 168, 0.12);
+  --custom-border: rgba(125, 211, 168, 0.25);
+
+  /* Priority colors */
+  --priority-high: #ef5350;
+  --priority-normal: var(--text-muted);
+  --priority-low: var(--text-dim);
+
+  /* Status */
+  --connected: #4caf50;
+  --disconnected: #ef5350;
+  --muted: #ef5350;
+
+  /* Spacing */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Reset & Base */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0 20px;
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: 24px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+header h1 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.connection-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px 3px 8px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+}
+
+.connection-indicator .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: background 0.3s ease;
+}
+
+.connection-indicator.connected {
+  background: rgba(76, 175, 80, 0.1);
+  color: var(--connected);
+}
+.connection-indicator.connected .dot {
+  background: var(--connected);
+  box-shadow: 0 0 6px var(--connected);
+}
+
+.connection-indicator.disconnected {
+  background: rgba(239, 83, 80, 0.1);
+  color: var(--disconnected);
+}
+.connection-indicator.disconnected .dot {
+  background: var(--disconnected);
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+.header-controls {
+  display: flex;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
+.btn {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--bg-card-hover);
+  border-color: #2a3040;
+  color: var(--text-primary);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-mute.active {
+  background: rgba(239, 83, 80, 0.15);
+  border-color: rgba(239, 83, 80, 0.3);
+  color: var(--muted);
+}
+
+.btn-omni.active {
+  background: var(--omni-bg);
+  border-color: var(--omni-border);
+  color: var(--omni);
+}
+
+.mute-icon, .omni-icon {
+  font-size: 14px;
+}
+
+/* Small inline buttons */
+.btn-sm {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+}
+
+/* ==========================================================================
+   Panels
+   ========================================================================== */
+
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s ease;
+}
+
+.panel:hover {
+  border-color: #252a38;
+}
+
+.panel.hidden {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px 10px;
+}
+
+.panel-header h2 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-count {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 20px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.badge-count.has-items {
+  background: rgba(110, 170, 245, 0.15);
+  color: var(--codex);
+}
+
+/* ==========================================================================
+   Now Speaking
+   ========================================================================== */
+
+.panel-speaking {
+  border-color: var(--claude-code-border);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(212, 165, 116, 0.04) 100%);
+}
+
+.panel-speaking.source-codex {
+  border-color: var(--codex-border);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(110, 170, 245, 0.04) 100%);
+}
+
+.panel-speaking.source-omni {
+  border-color: var(--omni-border);
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(167, 139, 250, 0.04) 100%);
+}
+
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--claude-code);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.panel-speaking.source-codex .pulse-dot {
+  background: var(--codex);
+}
+
+.panel-speaking.source-omni .pulse-dot {
+  background: var(--omni);
+}
+
+.speaking-card {
+  padding: 4px 18px 18px;
+}
+
+.speaking-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.speaking-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--claude-code);
+  margin-bottom: 12px;
+}
+
+.panel-speaking.source-codex .speaking-text {
+  border-left-color: var(--codex);
+}
+
+.panel-speaking.source-omni .speaking-text {
+  border-left-color: var(--omni);
+}
+
+/* Audio waveform animation */
+.speaking-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+  padding-left: 2px;
+}
+
+.speaking-wave span {
+  display: block;
+  width: 3px;
+  background: var(--claude-code);
+  border-radius: 2px;
+  animation: waveform 1.2s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+.panel-speaking.source-codex .speaking-wave span {
+  background: var(--codex);
+}
+
+.panel-speaking.source-omni .speaking-wave span {
+  background: var(--omni);
+}
+
+.speaking-wave span:nth-child(1) { height: 6px; animation-delay: 0s; }
+.speaking-wave span:nth-child(2) { height: 12px; animation-delay: 0.15s; }
+.speaking-wave span:nth-child(3) { height: 8px; animation-delay: 0.3s; }
+.speaking-wave span:nth-child(4) { height: 14px; animation-delay: 0.45s; }
+.speaking-wave span:nth-child(5) { height: 5px; animation-delay: 0.6s; }
+
+/* ==========================================================================
+   Source Badges
+   ========================================================================== */
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+.source-badge.claude-code {
+  background: var(--claude-code-bg);
+  color: var(--claude-code);
+  border: 1px solid var(--claude-code-border);
+}
+
+.source-badge.codex {
+  background: var(--codex-bg);
+  color: var(--codex);
+  border: 1px solid var(--codex-border);
+}
+
+.source-badge.omni {
+  background: var(--omni-bg);
+  color: var(--omni);
+  border: 1px solid var(--omni-border);
+}
+
+.source-badge.custom {
+  background: var(--custom-bg);
+  color: var(--custom);
+  border: 1px solid var(--custom-border);
+}
+
+/* ==========================================================================
+   Priority Indicators
+   ========================================================================== */
+
+.priority-indicator {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.priority-indicator.high {
+  background: var(--priority-high);
+  box-shadow: 0 0 6px var(--priority-high);
+}
+
+.priority-indicator.normal {
+  background: var(--text-muted);
+}
+
+.priority-indicator.low {
+  background: var(--text-dim);
+}
+
+/* ==========================================================================
+   Card Lists (Queue + History)
+   ========================================================================== */
+
+.card-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.card-list::-webkit-scrollbar {
+  width: 5px;
+}
+.card-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.card-list::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 4px;
+}
+
+.message-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border-subtle);
+  transition: background 0.15s ease;
+  animation: slideIn 0.3s ease;
+}
+
+.message-card:first-child {
+  border-top: none;
+}
+
+.message-card:hover {
+  background: var(--bg-card);
+}
+
+.message-card .time {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 52px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.message-card .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.message-card .content {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-card .project-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-card .branch-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 2px;
+}
+
+.message-card .text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 28px 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ==========================================================================
+   Sources Grid
+   ========================================================================== */
+
+.sources-grid {
+  padding: 4px 18px 14px;
+}
+
+.source-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+  transition: background 0.15s ease;
+}
+
+.source-control:last-child {
+  margin-bottom: 0;
+}
+
+.source-control:hover {
+  background: var(--bg-card-hover);
+}
+
+.source-control-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.source-control .source-count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.source-control .btn-sm.active {
+  background: rgba(239, 83, 80, 0.12);
+  border-color: rgba(239, 83, 80, 0.25);
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes waveform {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 600px) {
+  body {
+    padding: 12px 14px;
+  }
+
+  header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .message-card {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .message-card .time {
+    min-width: auto;
+  }
+}

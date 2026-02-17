@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentVox</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>AgentVox</h1>
+      <span id="connection-status" class="connection-indicator disconnected" title="WebSocket disconnected">
+        <span class="dot"></span>
+        <span class="connection-text">Disconnected</span>
+      </span>
+    </div>
+    <div class="header-controls">
+      <button id="omni-toggle" class="btn btn-omni" title="Toggle Omni Mode">
+        <span class="omni-icon">&#9678;</span> Omni
+      </button>
+      <button id="mute-all" class="btn btn-mute" title="Mute All Audio">
+        <span class="mute-icon">&#9834;</span> Mute All
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Now Speaking -->
+    <section id="now-speaking" class="panel panel-speaking hidden">
+      <div class="panel-header">
+        <h2>
+          <span class="pulse-dot"></span>
+          Now Speaking
+        </h2>
+      </div>
+      <div class="speaking-card">
+        <div class="speaking-meta">
+          <span class="source-badge" id="speaking-source"></span>
+          <span class="project-name" id="speaking-project"></span>
+          <span class="branch-name" id="speaking-branch"></span>
+        </div>
+        <p class="speaking-text" id="speaking-text"></p>
+        <div class="speaking-wave">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Queue -->
+    <section id="queue-section" class="panel">
+      <div class="panel-header">
+        <h2>Queue</h2>
+        <span id="queue-count" class="badge-count">0</span>
+      </div>
+      <div id="queue-list" class="card-list">
+        <div class="empty-state">No pending messages</div>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section id="history-section" class="panel">
+      <div class="panel-header">
+        <h2>History</h2>
+      </div>
+      <div id="history-list" class="card-list">
+        <div class="empty-state">No messages yet</div>
+      </div>
+    </section>
+
+    <!-- Sources -->
+    <section id="sources-section" class="panel">
+      <div class="panel-header">
+        <h2>Sources</h2>
+      </div>
+      <div id="sources-list" class="sources-grid">
+        <div class="empty-state">No sources connected</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

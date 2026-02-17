@@ -1,0 +1,33 @@
+{
+  "port": 9876,
+  "voices": {
+    "default": "jean",
+    "sources": {
+      "claude-code": "jean",
+      "codex": "azelma"
+    },
+    "projects": {}
+  },
+  "summarization": {
+    "claude-code": { "method": "claude-cli" },
+    "codex": { "method": "openai", "model": "gpt-4o-mini" }
+  },
+  "tts": {
+    "engine": "pocket-tts",
+    "host": "localhost",
+    "port": 8000
+  },
+  "queue": {
+    "maxSize": 20,
+    "dedupWindowMs": 10000,
+    "batchSubAgents": true
+  },
+  "omni": {
+    "enabled": false,
+    "intervalSeconds": 45,
+    "watchSessions": ["active"],
+    "alertOnDrift": true,
+    "narrateRoutine": false,
+    "summarizer": { "method": "claude-cli", "model": "haiku" }
+  }
+}
