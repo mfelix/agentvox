@@ -47,21 +47,20 @@
       </div>
     </section>
 
-    <!-- Queue -->
-    <section id="queue-section" class="panel">
+    <!-- Messages -->
+    <section id="messages-section" class="panel">
       <div class="panel-header">
-        <h2>Queue</h2>
-        <span id="queue-count" class="badge-count">0</span>
+        <h2>Messages</h2>
       </div>
-      <div id="queue-list" class="card-list">
-        <div class="empty-state">No pending messages</div>
-      </div>
-    </section>
-
-    <!-- History -->
-    <section id="history-section" class="panel">
-      <div class="panel-header">
-        <h2>History</h2>
+      <div id="queue-bar" class="queue-bar hidden">
+        <div class="queue-bar-summary" onclick="toggleQueueExpand()">
+          <span class="queue-bar-label">Queued</span>
+          <span id="queue-count" class="badge-count has-items">0</span>
+          <span id="queue-caret" class="queue-caret">&#9656;</span>
+          <button class="btn btn-sm btn-clear-queue" onclick="event.stopPropagation(); clearQueue()">Clear Q</button>
+        </div>
+        <div id="queue-items" class="queue-items">
+        </div>
       </div>
       <div id="history-list" class="card-list">
         <div class="empty-state">No messages yet</div>

@@ -42,8 +42,11 @@ export class TtsEngine {
     throw new Error("pocket-tts server failed to start within 60 seconds");
   }
 
-  async speak(text, voice) {
+  async speak(text, voice, speed = 1.0) {
     await this.ensureServer();
+
+    // Strip emojis — TTS engines mangle them into nonsense
+    text = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").replace(/\s{2,}/g, " ").trim();
 
     this.speaking = true;
 
@@ -59,7 +62,12 @@ export class TtsEngine {
 
       // Try streaming to ffplay first, fall back to temp file + afplay
       const curl = spawn("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
-      const player = spawn("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "pipe:0"], {
+      const ffplayArgs = ["-nodisp", "-autoexit", "-loglevel", "quiet"];
+      if (speed !== 1.0) {
+        ffplayArgs.push("-af", `atempo=${speed}`);
+      }
+      ffplayArgs.push("-i", "pipe:0");
+      const player = spawn("ffplay", ffplayArgs, {
         stdio: ["pipe", "ignore", "ignore"],
       });
 
@@ -68,7 +76,7 @@ export class TtsEngine {
       player.on("error", () => {
         // ffplay not available, fall back to afplay
         curl.kill();
-        this._speakFallback(text, voice).then(resolve).catch(reject);
+        this._speakFallback(text, voice, speed).then(resolve).catch(reject);
       });
 
       player.on("close", (code) => {
@@ -81,7 +89,7 @@ export class TtsEngine {
     });
   }
 
-  async _speakFallback(text, voice) {
+  async _speakFallback(text, voice, speed = 1.0) {
     await this.ensureServer();
 
     return new Promise((resolve, reject) => {
@@ -103,7 +111,11 @@ export class TtsEngine {
           return reject(new Error("curl failed"));
         }
 
-        const player = spawn("afplay", [tmpFile]);
+        const afplayArgs = [tmpFile];
+        if (speed !== 1.0) {
+          afplayArgs.push("-r", String(speed));
+        }
+        const player = spawn("afplay", afplayArgs);
         player.on("close", () => {
           this.speaking = false;
           this.currentProcess = null;

@@ -1,11 +1,22 @@
 {
   "port": 9876,
+  "sourceNames": {},
   "voices": {
     "default": "jean",
     "sources": {
       "claude-code": "jean",
       "codex": "azelma"
     },
+    "projects": {}
+  },
+  "speed": {
+    "default": 1.0,
+    "sources": {},
+    "projects": {}
+  },
+  "personality": {
+    "default": { "verbosity": 2, "vibe": "chill", "humor": 25, "announceSource": false },
+    "sources": {},
     "projects": {}
   },
   "summarization": {
@@ -24,7 +35,7 @@
   },
   "omni": {
     "enabled": false,
-    "intervalSeconds": 45,
+    "intervalSeconds": 15,
     "watchSessions": ["active"],
     "alertOnDrift": true,
     "narrateRoutine": false,
