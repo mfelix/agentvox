@@ -9,6 +9,8 @@ export class TtsEngine {
     this.serverProcess = null;
     this.speaking = false;
     this.currentProcess = null;
+    // Internal promise chain so all callers are serialized — no overlapping audio
+    this._speechQueue = Promise.resolve();
   }
 
   async checkHealth() {
@@ -42,7 +44,18 @@ export class TtsEngine {
     throw new Error("pocket-tts server failed to start within 60 seconds");
   }
 
-  async speak(text, voice, speed = 1.0) {
+  speak(text, voice, speed = 1.0) {
+    // All speak calls are serialized through this queue to prevent overlapping audio.
+    // This guarantees that no matter who calls speak() — API messages, omni narration,
+    // or voice preview — only one utterance plays at a time.
+    const promise = this._speechQueue
+      .then(() => this._doSpeak(text, voice, speed))
+      .catch((err) => console.error("TTS speech error:", err));
+    this._speechQueue = promise;
+    return promise;
+  }
+
+  async _doSpeak(text, voice, speed = 1.0) {
     await this.ensureServer();
 
     // Strip emojis — TTS engines mangle them into nonsense

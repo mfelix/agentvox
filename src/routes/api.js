@@ -47,10 +47,8 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     queue.enqueue(message);
     state.broadcast("message:new", message);
 
-    // Process asynchronously — don't block the response
-    processMessage(message, { queue, tts, summarizer, config, state }).catch(
-      (err) => console.error("Failed to process message:", err)
-    );
+    // Process asynchronously — queued so messages speak one at a time
+    processMessage(message, { queue, tts, summarizer, config, state });
 
     res.status(202).json({ queued: true, id: message.sessionId });
   });
@@ -350,10 +348,50 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     res.json({ history: state.history.slice(-limit) });
   });
 
+  router.post("/synth", async (req, res) => {
+    const { enabled, masterVolume, tempo, swing } = req.body;
+    if (!config.synth) config.synth = {};
+    if (typeof enabled === "boolean") config.synth.enabled = enabled;
+    if (typeof masterVolume === "number") config.synth.masterVolume = Math.max(0, Math.min(1, masterVolume));
+    if (typeof tempo === "number") config.synth.tempo = Math.max(60, Math.min(200, Math.round(tempo)));
+    if (typeof swing === "number") config.synth.swing = Math.max(0, Math.min(1, swing));
+
+    const { saveSynthConfig } = await import("../config.js");
+    saveSynthConfig(config.synth);
+
+    state.broadcast("synth:update", config.synth);
+    res.json(config.synth);
+  });
+
+  router.post("/telemetry", (req, res) => {
+    const { type, tool, source, project, status } = req.body;
+    if (!type || typeof type !== "string") {
+      return res.status(400).json({ error: "type is required" });
+    }
+    const event = {
+      type,
+      tool: typeof tool === "string" ? tool.slice(0, 50) : undefined,
+      source: typeof source === "string" ? source.slice(0, 100) : undefined,
+      project: typeof project === "string" ? project.slice(0, 200) : undefined,
+      status: typeof status === "string" ? status.slice(0, 50) : undefined,
+      timestamp: Date.now(),
+    };
+    state.broadcast("telemetry", event);
+    res.json({ ok: true });
+  });
+
   return router;
 }
 
-async function processMessage(message, { tts, summarizer, config, state }) {
+function processMessage(message, deps) {
+  // TTS serialization is handled inside TtsEngine._speechQueue — all callers
+  // (API messages, omni narration, voice preview) are automatically serialized.
+  _processMessage(message, deps).catch(
+    (err) => console.error("Speech processing error:", err)
+  );
+}
+
+async function _processMessage(message, { tts, summarizer, config, state }) {
   // Check mute
   if (state.globalMute) return;
   if (state.muted.has(message.source) || state.muted.has(message.project)) return;
