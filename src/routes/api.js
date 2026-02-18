@@ -409,38 +409,6 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     res.json({ history: state.history.slice(-limit) });
   });
 
-  router.post("/synth", async (req, res) => {
-    const { enabled, masterVolume, tempo, swing } = req.body;
-    if (!config.synth) config.synth = {};
-    if (typeof enabled === "boolean") config.synth.enabled = enabled;
-    if (typeof masterVolume === "number") config.synth.masterVolume = Math.max(0, Math.min(1, masterVolume));
-    if (typeof tempo === "number") config.synth.tempo = Math.max(60, Math.min(200, Math.round(tempo)));
-    if (typeof swing === "number") config.synth.swing = Math.max(0, Math.min(1, swing));
-
-    const { saveSynthConfig } = await import("../config.js");
-    saveSynthConfig(config.synth);
-
-    state.broadcast("synth:update", config.synth);
-    res.json(config.synth);
-  });
-
-  router.post("/telemetry", (req, res) => {
-    const { type, tool, source, project, status } = req.body;
-    if (!type || typeof type !== "string") {
-      return res.status(400).json({ error: "type is required" });
-    }
-    const event = {
-      type,
-      tool: typeof tool === "string" ? tool.slice(0, 50) : undefined,
-      source: typeof source === "string" ? source.slice(0, 100) : undefined,
-      project: typeof project === "string" ? project.slice(0, 200) : undefined,
-      status: typeof status === "string" ? status.slice(0, 50) : undefined,
-      timestamp: Date.now(),
-    };
-    state.broadcast("telemetry", event);
-    res.json({ ok: true });
-  });
-
   return router;
 }
 
