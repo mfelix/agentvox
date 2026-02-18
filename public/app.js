@@ -2,6 +2,8 @@
    AgentVox Dashboard - WebSocket Client & UI
    ========================================================================== */
 
+import { SynthEngine } from "./synth.js";
+
 const state = {
   queue: [],
   history: [],
@@ -20,6 +22,9 @@ const state = {
   queueExpanded: false,
   sourceNames: {},
   editingSource: null,
+  synth: null,
+  synthEnabled: false,
+  telemetryFeed: [],
 };
 
 function displayName(source) {
@@ -78,7 +83,12 @@ function handleEvent(evt, data) {
         if (m.source) state.sources.add(m.source);
         if (m.project && m.project !== "unknown") state.projects.add(m.project);
       });
+      // Initialize synth with saved settings
+      if (data.synth) {
+        state.synthSettings = data.synth;
+      }
       renderAll();
+      restoreSynthState();
       // Fetch latest personality from REST API to ensure we have persisted values
       fetchPersonality();
       break;
@@ -153,6 +163,14 @@ function handleEvent(evt, data) {
       state.omniActive = data.active || false;
       renderOmniButton();
       break;
+
+    case "telemetry":
+      if (state.synth && state.synthEnabled) {
+        state.synth.onTelemetry(data);
+      }
+      pushTelemetryEvent(data);
+      renderActivityIndicator();
+      break;
   }
 }
 
@@ -166,6 +184,7 @@ function renderAll() {
   renderSources();
   renderMuteButton();
   renderOmniButton();
+  renderSynthControls();
 }
 
 function renderConnectionStatus() {
@@ -425,6 +444,279 @@ function renderOmniButton() {
   }
 }
 
+// --- Synth Controls ---
+
+function initSynth() {
+  if (!state.synth) {
+    state.synth = new SynthEngine();
+  }
+}
+
+function renderSynthControls() {
+  const btn = document.getElementById("synth-toggle");
+  const controls = document.getElementById("synth-controls");
+  if (state.synthEnabled) {
+    btn.innerHTML = '<span class="synth-icon">&#9835;</span> On';
+    btn.className = "btn btn-synth active";
+    controls.classList.remove("hidden");
+  } else {
+    btn.innerHTML = '<span class="synth-icon">&#9835;</span> Off';
+    btn.className = "btn btn-synth";
+    controls.classList.add("hidden");
+  }
+}
+
+function saveSynthSettings() {
+  const s = state.synthSettings || {};
+  fetch("/api/synth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      enabled: state.synthEnabled,
+      masterVolume: s.masterVolume ?? 0.5,
+      tempo: s.tempo ?? 128,
+      swing: s.swing ?? 0,
+    }),
+  }).catch((err) => console.error("Failed to save synth settings:", err));
+}
+
+async function restoreSynthState() {
+  const s = state.synthSettings || {};
+  // Sync slider positions to saved values
+  const masterPct = Math.round((s.masterVolume ?? 0.5) * 100);
+  const tempo = s.tempo ?? 128;
+  const swingPct = Math.round((s.swing ?? 0) * 100);
+  const masterEl = document.getElementById("synth-master");
+  const tempoEl = document.getElementById("synth-tempo");
+  const swingEl = document.getElementById("synth-swing");
+  if (masterEl) { masterEl.value = masterPct; document.getElementById("synth-master-val").textContent = masterPct + "%"; }
+  if (tempoEl) { tempoEl.value = tempo; document.getElementById("synth-tempo-val").textContent = tempo; }
+  if (swingEl) { swingEl.value = swingPct; document.getElementById("synth-swing-val").textContent = swingPct + "%"; }
+
+  if (s.enabled) {
+    initSynth();
+    state.synthEnabled = true;
+    await state.synth.start();
+    state.synth.setMasterVolume(s.masterVolume ?? 0.5);
+    state.synth.setTempo(tempo);
+    state.synth.setSwing(s.swing ?? 0);
+    startSynthAnimation();
+  }
+  renderSynthControls();
+}
+
+function renderActivityIndicator() {
+  if (!state.synth || !state.synthEnabled) return;
+
+  const step = state.synth.getStep();
+  const stepActivity = state.synth.getStepActivity();
+  const toolHits = state.synth.getToolHits();
+  const lastTrigger = state.synth.getLastTrigger();
+  const flash = state.synth.getFlashIntensity();
+  const activity = state.synth.getActivityLevel();
+  const totalEvents = state.synth.getTotalEvents();
+  const barsElapsed = state.synth.getBarsElapsed();
+  const eventCounts = state.synth.getEventCounts();
+
+  // --- Step sequencer ---
+  const steps = document.querySelectorAll(".seq-step");
+  steps.forEach((el, i) => {
+    el.classList.toggle("active", i === step);
+    // Show step activity as brightness
+    if (stepActivity[i] > 0.1) {
+      el.classList.add("hit");
+      el.style.opacity = 0.4 + stepActivity[i] * 0.6;
+    } else {
+      el.classList.remove("hit");
+      el.style.opacity = "";
+    }
+  });
+
+  // --- Pattern matrix ---
+  document.querySelectorAll(".pattern-row").forEach((row) => {
+    const tool = row.dataset.tool;
+    const hits = toolHits[tool];
+    const cells = row.querySelectorAll(".pattern-cell");
+    cells.forEach((cell, i) => {
+      const isLit = hits && hits.has(i);
+      cell.classList.toggle("lit", isLit);
+      cell.classList.toggle("active-col", i === step);
+    });
+  });
+
+  // --- EVA readout ---
+  const bpmEl = document.getElementById("eva-bpm");
+  const barEl = document.getElementById("eva-bar");
+  const evtEl = document.getElementById("eva-events");
+  const activeEl = document.getElementById("eva-active");
+  const toolEl = document.getElementById("eva-tool");
+
+  if (bpmEl) bpmEl.textContent = (state.synth.bpm || 128) + " BPM";
+  if (barEl) barEl.textContent = "BAR " + barsElapsed;
+  if (evtEl) {
+    evtEl.textContent = totalEvents + " EVT";
+    evtEl.classList.toggle("highlight", totalEvents > 0 && flash > 0.3);
+  }
+  if (activeEl) {
+    if (activity > 0.6) {
+      activeEl.textContent = "ACTIVE";
+      activeEl.className = "eva-datum highlight";
+    } else if (activity > 0.2) {
+      activeEl.textContent = "ONLINE";
+      activeEl.className = "eva-datum";
+    } else {
+      activeEl.textContent = "IDLE";
+      activeEl.className = "eva-datum";
+    }
+  }
+  if (toolEl && lastTrigger && lastTrigger.tool) {
+    toolEl.textContent = lastTrigger.tool.toUpperCase();
+    toolEl.classList.toggle("highlight", flash > 0.5);
+  }
+
+  // --- Flash overlay (EVA-style) ---
+  const flashEl = document.getElementById("synth-flash");
+  if (flashEl) {
+    if (flash > 0.5 && lastTrigger) {
+      const tool = (lastTrigger.tool || "").toLowerCase();
+      const type = (lastTrigger.type || "").toLowerCase();
+      flashEl.className = "synth-flash";
+      if (type === "error") flashEl.classList.add("flash-error");
+      else if (type === "completion") flashEl.classList.add("flash-done");
+      else if (tool === "read" || tool === "grep" || tool === "glob") flashEl.classList.add("flash-read");
+      else if (tool === "write" || tool === "edit") flashEl.classList.add("flash-write");
+      else if (tool === "bash") flashEl.classList.add("flash-bash");
+      else if (tool === "task") flashEl.classList.add("flash-task");
+      else flashEl.classList.add("flash-read");
+    } else if (flash < 0.1) {
+      flashEl.className = "synth-flash";
+    }
+  }
+
+  // --- Canvas: activity waveform with step markers ---
+  const canvas = document.getElementById("synth-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw step-aligned bars with tool coloring
+  const barW = w / 16 - 2;
+  for (let i = 0; i < 16; i++) {
+    const x = i * (barW + 2);
+    const level = stepActivity[i];
+    const barH = Math.max(1, level * h * 0.85);
+    const y = h - barH;
+
+    // Color based on which tools are active on this step
+    let r = 80, g = 70, b = 120; // base purple
+    if (toolHits["Bash"] && toolHits["Bash"].has(i)) { r = 200; g = 60; b = 60; }
+    else if (toolHits["Write"] && toolHits["Write"].has(i)) { r = 190; g = 150; b = 100; }
+    else if (toolHits["Read"] && toolHits["Read"].has(i)) { r = 90; g = 150; b = 220; }
+    else if (toolHits["Task"] && toolHits["Task"].has(i)) { r = 150; g = 120; b = 220; }
+
+    const alpha = i === step ? 0.9 : (level > 0.05 ? 0.5 + level * 0.3 : 0.12);
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    ctx.fillRect(x, y, barW, barH);
+
+    // Playhead line
+    if (i === step) {
+      ctx.fillStyle = "rgba(167, 139, 250, 0.15)";
+      ctx.fillRect(x, 0, barW, h);
+    }
+  }
+
+  // Thin line across the bottom for grounding
+  ctx.fillStyle = "rgba(30, 35, 48, 0.8)";
+  ctx.fillRect(0, h - 1, w, 1);
+}
+
+// Start animation loop for visualizer
+let synthAnimFrame;
+function startSynthAnimation() {
+  function animate() {
+    renderActivityIndicator();
+    synthAnimFrame = requestAnimationFrame(animate);
+  }
+  animate();
+}
+
+function stopSynthAnimation() {
+  if (synthAnimFrame) {
+    cancelAnimationFrame(synthAnimFrame);
+    synthAnimFrame = null;
+  }
+  // Clear canvas
+  const canvas = document.getElementById("synth-canvas");
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+// --- Telemetry Feed ---
+
+const TOOL_ICONS = {
+  Read: "\u25b7",      // right triangle
+  Write: "\u25c6",     // diamond
+  Edit: "\u25c6",      // diamond
+  Bash: "\u25a0",      // filled square
+  Grep: "\u25cb",      // circle
+  Glob: "\u25cb",      // circle
+  Task: "\u25b2",      // up triangle
+};
+const TYPE_LABELS = {
+  tool_start: "START",
+  tool_end: "END",
+  thinking: "THINK",
+  error: "ERROR",
+  completion: "DONE",
+  heartbeat: "PULSE",
+};
+
+function pushTelemetryEvent(data) {
+  state.telemetryFeed.push({ ...data, _ts: Date.now() });
+  if (state.telemetryFeed.length > 30) state.telemetryFeed.shift();
+  renderTelemetryFeed();
+}
+
+function renderTelemetryFeed() {
+  const feed = document.getElementById("synth-feed");
+  if (!feed) return;
+
+  if (state.telemetryFeed.length === 0) {
+    feed.innerHTML = '<div class="synth-feed-empty">Waiting for events...</div>';
+    return;
+  }
+
+  const now = Date.now();
+  // Show last 12 events, newest at bottom
+  const recent = state.telemetryFeed.slice(-12);
+
+  feed.innerHTML = recent.map((evt) => {
+    const age = (now - evt._ts) / 1000;
+    const opacity = Math.max(0.25, 1 - age / 15);
+    const icon = TOOL_ICONS[evt.tool] || "\u00b7";
+    const label = TYPE_LABELS[evt.type] || evt.type;
+    const toolName = evt.tool || "";
+    const source = evt.source || "";
+    const typeClass = "feed-type-" + (evt.type || "").replace(/_/g, "-");
+    const time = new Date(evt._ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    return `<div class="synth-feed-item ${typeClass}" style="opacity:${opacity.toFixed(2)}">
+      <span class="feed-time">${esc(time)}</span>
+      <span class="feed-icon">${icon}</span>
+      <span class="feed-label">${esc(label)}</span>
+      ${toolName ? `<span class="feed-tool">${esc(toolName)}</span>` : ""}
+      <span class="feed-source">${esc(source)}</span>
+    </div>`;
+  }).join("");
+
+  // Auto-scroll to bottom
+  feed.scrollTop = feed.scrollHeight;
+}
+
 // --- User Actions ---
 
 document.getElementById("mute-all").addEventListener("click", () => {
@@ -440,6 +732,52 @@ document.getElementById("omni-toggle").addEventListener("click", () => {
   const endpoint = state.omniActive ? "/api/omni/off" : "/api/omni/on";
   fetch(endpoint, { method: "POST" });
 });
+
+document.getElementById("synth-toggle").addEventListener("click", async () => {
+  initSynth();
+  if (state.synthEnabled) {
+    state.synthEnabled = false;
+    state.synth.stop();
+    stopSynthAnimation();
+  } else {
+    state.synthEnabled = true;
+    await state.synth.start();
+    const s = state.synthSettings || {};
+    state.synth.setMasterVolume(s.masterVolume ?? 0.5);
+    state.synth.setTempo(s.tempo ?? 128);
+    state.synth.setSwing(s.swing ?? 0);
+    startSynthAnimation();
+  }
+  renderSynthControls();
+  saveSynthSettings();
+});
+
+document.getElementById("synth-master").addEventListener("input", (e) => {
+  const val = parseInt(e.target.value) / 100;
+  document.getElementById("synth-master-val").textContent = e.target.value + "%";
+  if (state.synth) state.synth.setMasterVolume(val);
+  if (!state.synthSettings) state.synthSettings = {};
+  state.synthSettings.masterVolume = val;
+});
+document.getElementById("synth-master").addEventListener("change", () => saveSynthSettings());
+
+document.getElementById("synth-tempo").addEventListener("input", (e) => {
+  const val = parseInt(e.target.value);
+  document.getElementById("synth-tempo-val").textContent = val;
+  if (state.synth) state.synth.setTempo(val);
+  if (!state.synthSettings) state.synthSettings = {};
+  state.synthSettings.tempo = val;
+});
+document.getElementById("synth-tempo").addEventListener("change", () => saveSynthSettings());
+
+document.getElementById("synth-swing").addEventListener("input", (e) => {
+  const val = parseInt(e.target.value) / 100;
+  document.getElementById("synth-swing-val").textContent = e.target.value + "%";
+  if (state.synth) state.synth.setSwing(val);
+  if (!state.synthSettings) state.synthSettings = {};
+  state.synthSettings.swing = val;
+});
+document.getElementById("synth-swing").addEventListener("change", () => saveSynthSettings());
 
 function toggleGlobalMute() {
   const endpoint = state.globalMute ? "/api/unmute" : "/api/mute";
@@ -671,5 +1009,24 @@ function fetchPersonality() {
     })
     .catch(() => {});
 }
+
+// Expose functions used by inline handlers to global scope (required for type="module")
+Object.assign(window, {
+  toggleQueueExpand, clearQueue, clearSource,
+  toggleMute, changeVoice, changeSpeed, changePersonality,
+  startRename, handleRenameKey, handleRenameBlur, toggleAnnounce,
+});
+
+// Initialize pattern matrix cells
+function initPatternMatrix() {
+  document.querySelectorAll(".pattern-cells").forEach((container) => {
+    let html = "";
+    for (let i = 0; i < 16; i++) {
+      html += `<div class="pattern-cell" data-step="${i}"></div>`;
+    }
+    container.innerHTML = html;
+  });
+}
+initPatternMatrix();
 
 connect();

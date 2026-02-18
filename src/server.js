@@ -88,6 +88,7 @@ wss.on("connection", (ws) => {
           projects: config.personality?.projects || {},
         },
         availableVibes: AVAILABLE_VIBES,
+        synth: config.synth || { enabled: false, masterVolume: 0.5, tempo: 128, swing: 0 },
       },
     })
   );

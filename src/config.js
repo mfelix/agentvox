@@ -48,6 +48,10 @@ function atomicSaveConfig(key, value) {
   fs.renameSync(tmpPath, configPath);
 }
 
+export function saveSynthConfig(synthConfig) {
+  atomicSaveConfig("synth", synthConfig);
+}
+
 export function saveVoiceConfig(voiceConfig) {
   atomicSaveConfig("voices", voiceConfig);
 }
