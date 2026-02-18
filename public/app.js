@@ -25,6 +25,7 @@ const state = {
   synth: null,
   synthEnabled: false,
   telemetryFeed: [],
+  audio: { gain: 1.0, compressor: false, limiter: false, eq: { bass: 0, mid: 0, treble: 0 }, reverb: { enabled: false, amount: 30 } },
 };
 
 function displayName(source) {
@@ -83,6 +84,10 @@ function handleEvent(evt, data) {
         if (m.source) state.sources.add(m.source);
         if (m.project && m.project !== "unknown") state.projects.add(m.project);
       });
+      // Initialize audio settings
+      if (data.audio) {
+        state.audio = data.audio;
+      }
       // Initialize synth with saved settings
       if (data.synth) {
         state.synthSettings = data.synth;
@@ -141,6 +146,17 @@ function handleEvent(evt, data) {
       renderSources();
       break;
 
+    case "audio:update":
+      state.audio = {
+        gain: data.gain ?? 1.0,
+        compressor: data.compressor ?? false,
+        limiter: data.limiter ?? false,
+        eq: { bass: 0, mid: 0, treble: 0, ...data.eq },
+        reverb: { enabled: false, amount: 30, ...data.reverb },
+      };
+      renderAudioControls();
+      break;
+
     case "queue:cleared":
       state.queue = [];
       renderQueue();
@@ -184,6 +200,7 @@ function renderAll() {
   renderSources();
   renderMuteButton();
   renderOmniButton();
+  renderAudioControls();
   renderSynthControls();
 }
 
@@ -443,6 +460,101 @@ function renderOmniButton() {
     btn.className = "btn btn-omni";
   }
 }
+
+// --- Audio Controls ---
+
+function renderAudioControls() {
+  const gainEl = document.getElementById("audio-gain");
+  const gainValEl = document.getElementById("audio-gain-val");
+  const compEl = document.getElementById("audio-compressor");
+  const limiterEl = document.getElementById("audio-limiter");
+  if (gainEl) {
+    gainEl.value = Math.round(state.audio.gain * 100);
+    gainValEl.textContent = Math.round(state.audio.gain * 100) + "%";
+  }
+  if (compEl) compEl.checked = state.audio.compressor;
+  if (limiterEl) limiterEl.checked = state.audio.limiter;
+
+  // EQ
+  const eq = state.audio.eq || {};
+  for (const band of ["bass", "mid", "treble"]) {
+    const el = document.getElementById(`audio-eq-${band}`);
+    const valEl = document.getElementById(`audio-eq-${band}-val`);
+    if (el) {
+      el.value = eq[band] || 0;
+      const v = eq[band] || 0;
+      valEl.textContent = (v > 0 ? "+" : "") + v + " dB";
+    }
+  }
+
+  // Reverb
+  const reverb = state.audio.reverb || {};
+  const reverbEl = document.getElementById("audio-reverb");
+  const reverbAmtEl = document.getElementById("audio-reverb-amount");
+  const reverbAmtValEl = document.getElementById("audio-reverb-amount-val");
+  const reverbAmtField = document.getElementById("audio-reverb-amount-field");
+  if (reverbEl) reverbEl.checked = reverb.enabled;
+  if (reverbAmtEl) {
+    reverbAmtEl.value = reverb.amount ?? 30;
+    reverbAmtValEl.textContent = (reverb.amount ?? 30) + "%";
+  }
+  if (reverbAmtField) {
+    reverbAmtField.style.opacity = reverb.enabled ? "1" : "0.35";
+    reverbAmtField.style.pointerEvents = reverb.enabled ? "auto" : "none";
+  }
+}
+
+function saveAudioSettings() {
+  fetch("/api/audio", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state.audio),
+  }).catch((err) => console.error("Failed to save audio settings:", err));
+}
+
+// Gain
+document.getElementById("audio-gain").addEventListener("input", (e) => {
+  const val = parseInt(e.target.value) / 100;
+  document.getElementById("audio-gain-val").textContent = e.target.value + "%";
+  state.audio.gain = val;
+});
+document.getElementById("audio-gain").addEventListener("change", () => saveAudioSettings());
+
+// Compressor & Limiter
+document.getElementById("audio-compressor").addEventListener("change", (e) => {
+  state.audio.compressor = e.target.checked;
+  saveAudioSettings();
+});
+document.getElementById("audio-limiter").addEventListener("change", (e) => {
+  state.audio.limiter = e.target.checked;
+  saveAudioSettings();
+});
+
+// EQ bands
+for (const band of ["bass", "mid", "treble"]) {
+  document.getElementById(`audio-eq-${band}`).addEventListener("input", (e) => {
+    const v = parseInt(e.target.value);
+    document.getElementById(`audio-eq-${band}-val`).textContent = (v > 0 ? "+" : "") + v + " dB";
+    if (!state.audio.eq) state.audio.eq = {};
+    state.audio.eq[band] = v;
+  });
+  document.getElementById(`audio-eq-${band}`).addEventListener("change", () => saveAudioSettings());
+}
+
+// Reverb
+document.getElementById("audio-reverb").addEventListener("change", (e) => {
+  if (!state.audio.reverb) state.audio.reverb = {};
+  state.audio.reverb.enabled = e.target.checked;
+  renderAudioControls();
+  saveAudioSettings();
+});
+document.getElementById("audio-reverb-amount").addEventListener("input", (e) => {
+  const v = parseInt(e.target.value);
+  document.getElementById("audio-reverb-amount-val").textContent = v + "%";
+  if (!state.audio.reverb) state.audio.reverb = {};
+  state.audio.reverb.amount = v;
+});
+document.getElementById("audio-reverb-amount").addEventListener("change", () => saveAudioSettings());
 
 // --- Synth Controls ---
 

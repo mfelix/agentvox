@@ -206,6 +206,65 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     });
   });
 
+  function getAudioState() {
+    return {
+      gain: config.audio?.gain ?? 1.0,
+      compressor: config.audio?.compressor ?? false,
+      limiter: config.audio?.limiter ?? false,
+      eq: { bass: 0, mid: 0, treble: 0, ...config.audio?.eq },
+      reverb: { enabled: false, amount: 30, ...config.audio?.reverb },
+    };
+  }
+
+  router.get("/audio", (req, res) => {
+    res.json(getAudioState());
+  });
+
+  router.post("/audio", async (req, res) => {
+    const { gain, compressor, limiter, eq, reverb } = req.body;
+
+    if (!config.audio) config.audio = {};
+
+    if (typeof gain === "number") {
+      if (gain < 0.5 || gain > 5.0) {
+        return res.status(400).json({ error: "gain must be between 0.5 and 5.0" });
+      }
+      config.audio.gain = gain;
+    }
+    if (typeof compressor === "boolean") config.audio.compressor = compressor;
+    if (typeof limiter === "boolean") config.audio.limiter = limiter;
+
+    if (eq && typeof eq === "object") {
+      if (!config.audio.eq) config.audio.eq = { bass: 0, mid: 0, treble: 0 };
+      for (const band of ["bass", "mid", "treble"]) {
+        if (typeof eq[band] === "number") {
+          if (eq[band] < -12 || eq[band] > 12) {
+            return res.status(400).json({ error: `${band} must be between -12 and 12` });
+          }
+          config.audio.eq[band] = eq[band];
+        }
+      }
+    }
+
+    if (reverb && typeof reverb === "object") {
+      if (!config.audio.reverb) config.audio.reverb = { enabled: false, amount: 30 };
+      if (typeof reverb.enabled === "boolean") config.audio.reverb.enabled = reverb.enabled;
+      if (typeof reverb.amount === "number") {
+        if (reverb.amount < 0 || reverb.amount > 100) {
+          return res.status(400).json({ error: "reverb amount must be between 0 and 100" });
+        }
+        config.audio.reverb.amount = reverb.amount;
+      }
+    }
+
+    const { saveAudioConfig } = await import("../config.js");
+    saveAudioConfig(config.audio);
+
+    const audioState = getAudioState();
+    state.broadcast("audio:update", audioState);
+    res.json(audioState);
+  });
+
   router.get("/personality", async (req, res) => {
     const { AVAILABLE_VIBES } = await import("../config.js");
     res.json({
@@ -417,8 +476,15 @@ async function _processMessage(message, { tts, summarizer, config, state }) {
   state.history.push(message);
   if (state.history.length > 200) state.history.shift();
 
-  // Speak
+  // Speak with audio processing
+  const audio = {
+    gain: config.audio?.gain ?? 1.0,
+    compressor: config.audio?.compressor ?? false,
+    limiter: config.audio?.limiter ?? false,
+    eq: { bass: 0, mid: 0, treble: 0, ...config.audio?.eq },
+    reverb: { enabled: false, amount: 30, ...config.audio?.reverb },
+  };
   state.broadcast("speaking:start", { ...message, voice, speed });
-  await tts.speak(spokenText, voice, speed);
+  await tts.speak(spokenText, voice, speed, audio);
   state.broadcast("speaking:done", message);
 }

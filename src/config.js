@@ -82,6 +82,10 @@ export function saveSpeedConfig(speedConfig) {
   atomicSaveConfig("speed", speedConfig);
 }
 
+export function saveAudioConfig(audioConfig) {
+  atomicSaveConfig("audio", audioConfig);
+}
+
 export function saveSourceNames(sourceNames) {
   atomicSaveConfig("sourceNames", sourceNames);
 }

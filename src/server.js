@@ -88,6 +88,13 @@ wss.on("connection", (ws) => {
           projects: config.personality?.projects || {},
         },
         availableVibes: AVAILABLE_VIBES,
+        audio: {
+          gain: config.audio?.gain ?? 1.0,
+          compressor: config.audio?.compressor ?? false,
+          limiter: config.audio?.limiter ?? false,
+          eq: { bass: 0, mid: 0, treble: 0, ...config.audio?.eq },
+          reverb: { enabled: false, amount: 30, ...config.audio?.reverb },
+        },
         synth: config.synth || { enabled: false, masterVolume: 0.5, tempo: 128, swing: 0 },
       },
     })

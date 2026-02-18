@@ -77,6 +77,107 @@
       </div>
     </section>
 
+    <!-- Audio Processing -->
+    <section id="audio-section" class="panel">
+      <div class="panel-header">
+        <h2>Audio</h2>
+      </div>
+      <div class="audio-panel-body">
+
+        <!-- Dynamics Group -->
+        <div class="audio-group">
+          <div class="audio-group-header">
+            <span class="audio-group-label">Dynamics</span>
+          </div>
+          <div class="audio-group-content">
+            <div class="audio-field audio-field-wide">
+              <label class="audio-label">Gain</label>
+              <input type="range" id="audio-gain" class="audio-slider" min="50" max="500" step="10" value="100">
+              <span class="audio-value" id="audio-gain-val">100%</span>
+            </div>
+            <div class="audio-toggles-row">
+              <div class="audio-toggle-field">
+                <label class="audio-switch">
+                  <input type="checkbox" id="audio-compressor">
+                  <span class="audio-switch-track"><span class="audio-switch-thumb"></span></span>
+                </label>
+                <label class="audio-toggle-label" for="audio-compressor">Compressor</label>
+              </div>
+              <div class="audio-toggle-field">
+                <label class="audio-switch">
+                  <input type="checkbox" id="audio-limiter">
+                  <span class="audio-switch-track"><span class="audio-switch-thumb"></span></span>
+                </label>
+                <label class="audio-toggle-label" for="audio-limiter">Limiter</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- EQ Group -->
+        <div class="audio-group audio-group-eq">
+          <div class="audio-group-header">
+            <span class="audio-group-label">Equalizer</span>
+          </div>
+          <div class="audio-group-content">
+            <div class="audio-eq-strip">
+              <div class="audio-eq-band">
+                <span class="audio-eq-band-value" id="audio-eq-bass-val">0 dB</span>
+                <div class="audio-eq-slider-wrap">
+                  <div class="audio-eq-center-line"></div>
+                  <input type="range" id="audio-eq-bass" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
+                </div>
+                <span class="audio-eq-band-label">Bass</span>
+                <span class="audio-eq-band-freq">250 Hz</span>
+              </div>
+              <div class="audio-eq-band">
+                <span class="audio-eq-band-value" id="audio-eq-mid-val">0 dB</span>
+                <div class="audio-eq-slider-wrap">
+                  <div class="audio-eq-center-line"></div>
+                  <input type="range" id="audio-eq-mid" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
+                </div>
+                <span class="audio-eq-band-label">Mid</span>
+                <span class="audio-eq-band-freq">1.2 kHz</span>
+              </div>
+              <div class="audio-eq-band">
+                <span class="audio-eq-band-value" id="audio-eq-treble-val">0 dB</span>
+                <div class="audio-eq-slider-wrap">
+                  <div class="audio-eq-center-line"></div>
+                  <input type="range" id="audio-eq-treble" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
+                </div>
+                <span class="audio-eq-band-label">Treble</span>
+                <span class="audio-eq-band-freq">4 kHz</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Effects Group -->
+        <div class="audio-group audio-group-fx">
+          <div class="audio-group-header">
+            <span class="audio-group-label">Effects</span>
+          </div>
+          <div class="audio-group-content">
+            <div class="audio-fx-control">
+              <div class="audio-toggle-field">
+                <label class="audio-switch audio-switch-fx">
+                  <input type="checkbox" id="audio-reverb">
+                  <span class="audio-switch-track audio-switch-track-fx"><span class="audio-switch-thumb"></span></span>
+                </label>
+                <label class="audio-toggle-label" for="audio-reverb">Reverb</label>
+              </div>
+              <div class="audio-field audio-field-wide" id="audio-reverb-amount-field">
+                <label class="audio-label">Wet</label>
+                <input type="range" id="audio-reverb-amount" class="audio-slider audio-slider-reverb" min="0" max="100" step="5" value="30">
+                <span class="audio-value" id="audio-reverb-amount-val">30%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
     <!-- Soundscape -->
     <section id="synth-section" class="panel">
       <div class="panel-header">

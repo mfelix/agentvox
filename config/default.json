@@ -23,6 +23,13 @@
     "claude-code": { "method": "claude-cli" },
     "codex": { "method": "openai", "model": "gpt-4o-mini" }
   },
+  "audio": {
+    "gain": 1.0,
+    "compressor": false,
+    "limiter": false,
+    "eq": { "bass": 0, "mid": 0, "treble": 0 },
+    "reverb": { "enabled": false, "amount": 30 }
+  },
   "tts": {
     "engine": "pocket-tts",
     "host": "localhost",

@@ -1,6 +1,45 @@
 import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 
+const DEFAULT_AUDIO = {
+  gain: 1.0,
+  compressor: false,
+  limiter: false,
+  eq: { bass: 0, mid: 0, treble: 0 },
+  reverb: { enabled: false, amount: 30 },
+};
+
+function buildFilterChain(speed, audio) {
+  const filters = [];
+  if (speed !== 1.0) filters.push(`atempo=${speed}`);
+
+  // EQ: bass, mid (presence), treble
+  const { bass = 0, mid = 0, treble = 0 } = audio.eq || {};
+  if (bass !== 0) filters.push(`bass=gain=${bass}:frequency=120`);
+  if (mid !== 0) filters.push(`equalizer=f=2500:t=h:w=1200:g=${mid}`);
+  if (treble !== 0) filters.push(`treble=gain=${treble}:frequency=4000`);
+
+  if (audio.gain !== 1.0) filters.push(`volume=${audio.gain}`);
+  if (audio.compressor) filters.push("acompressor=threshold=-18dB:ratio=6:attack=5:release=100:makeup=6dB");
+  if (audio.limiter) filters.push("alimiter=limit=0.9:attack=3:release=50");
+
+  // Reverb via aecho — scale delays and decay from the amount (0-100)
+  const reverb = audio.reverb || {};
+  if (reverb.enabled) {
+    const amt = Math.max(0, Math.min(100, reverb.amount ?? 30));
+    const d1 = Math.round(30 + amt * 0.7);       // 30-100ms
+    const d2 = Math.round(60 + amt * 1.4);       // 60-200ms
+    const d3 = Math.round(90 + amt * 2.1);       // 90-300ms
+    const dec1 = (0.15 + amt * 0.004).toFixed(3); // 0.15-0.55
+    const dec2 = (0.10 + amt * 0.003).toFixed(3); // 0.10-0.40
+    const dec3 = (0.05 + amt * 0.002).toFixed(3); // 0.05-0.25
+    const outGain = (0.95 - amt * 0.002).toFixed(2); // keep output level stable
+    filters.push(`aecho=0.8:${outGain}:${d1}|${d2}|${d3}:${dec1}|${dec2}|${dec3}`);
+  }
+
+  return filters;
+}
+
 export class TtsEngine {
   constructor({ host = "localhost", port = 8000 } = {}) {
     this.host = host;
@@ -44,18 +83,19 @@ export class TtsEngine {
     throw new Error("pocket-tts server failed to start within 60 seconds");
   }
 
-  speak(text, voice, speed = 1.0) {
+  speak(text, voice, speed = 1.0, audio = {}) {
+    const opts = { ...DEFAULT_AUDIO, ...audio, eq: { ...DEFAULT_AUDIO.eq, ...audio.eq }, reverb: { ...DEFAULT_AUDIO.reverb, ...audio.reverb } };
     // All speak calls are serialized through this queue to prevent overlapping audio.
     // This guarantees that no matter who calls speak() — API messages, omni narration,
     // or voice preview — only one utterance plays at a time.
     const promise = this._speechQueue
-      .then(() => this._doSpeak(text, voice, speed))
+      .then(() => this._doSpeak(text, voice, speed, opts))
       .catch((err) => console.error("TTS speech error:", err));
     this._speechQueue = promise;
     return promise;
   }
 
-  async _doSpeak(text, voice, speed = 1.0) {
+  async _doSpeak(text, voice, speed, audio) {
     await this.ensureServer();
 
     // Strip emojis — TTS engines mangle them into nonsense
@@ -76,8 +116,10 @@ export class TtsEngine {
       // Try streaming to ffplay first, fall back to temp file + afplay
       const curl = spawn("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
       const ffplayArgs = ["-nodisp", "-autoexit", "-loglevel", "quiet"];
-      if (speed !== 1.0) {
-        ffplayArgs.push("-af", `atempo=${speed}`);
+
+      const filters = buildFilterChain(speed, audio);
+      if (filters.length > 0) {
+        ffplayArgs.push("-af", filters.join(","));
       }
       ffplayArgs.push("-i", "pipe:0");
       const player = spawn("ffplay", ffplayArgs, {
@@ -89,7 +131,7 @@ export class TtsEngine {
       player.on("error", () => {
         // ffplay not available, fall back to afplay
         curl.kill();
-        this._speakFallback(text, voice, speed).then(resolve).catch(reject);
+        this._speakFallback(text, voice, speed, audio).then(resolve).catch(reject);
       });
 
       player.on("close", (code) => {
@@ -102,7 +144,7 @@ export class TtsEngine {
     });
   }
 
-  async _speakFallback(text, voice, speed = 1.0) {
+  async _speakFallback(text, voice, speed, audio) {
     await this.ensureServer();
 
     return new Promise((resolve, reject) => {
@@ -124,18 +166,37 @@ export class TtsEngine {
           return reject(new Error("curl failed"));
         }
 
-        const afplayArgs = [tmpFile];
-        if (speed !== 1.0) {
-          afplayArgs.push("-r", String(speed));
+        const filters = buildFilterChain(1.0, audio); // speed handled by afplay -r
+        if (filters.length > 0) {
+          const processedFile = tmpFile.replace(".wav", "-processed.wav");
+          const ffmpegArgs = ["-y", "-i", tmpFile, "-af", filters.join(","), processedFile];
+          const ffmpeg = spawn("ffmpeg", ffmpegArgs, { stdio: "ignore" });
+          ffmpeg.on("close", (ffCode) => {
+            const playFile = ffCode === 0 ? processedFile : tmpFile;
+            const afplayArgs = [playFile];
+            if (speed !== 1.0) afplayArgs.push("-r", String(speed));
+            const player = spawn("afplay", afplayArgs);
+            player.on("close", () => {
+              this.speaking = false;
+              this.currentProcess = null;
+              try { fs.unlinkSync(tmpFile); } catch {}
+              try { fs.unlinkSync(processedFile); } catch {}
+              resolve();
+            });
+            this.currentProcess = { player };
+          });
+        } else {
+          const afplayArgs = [tmpFile];
+          if (speed !== 1.0) afplayArgs.push("-r", String(speed));
+          const player = spawn("afplay", afplayArgs);
+          player.on("close", () => {
+            this.speaking = false;
+            this.currentProcess = null;
+            try { fs.unlinkSync(tmpFile); } catch {}
+            resolve();
+          });
+          this.currentProcess = { player };
         }
-        const player = spawn("afplay", afplayArgs);
-        player.on("close", () => {
-          this.speaking = false;
-          this.currentProcess = null;
-          try { fs.unlinkSync(tmpFile); } catch {}
-          resolve();
-        });
-        this.currentProcess = { player };
       });
     });
   }
