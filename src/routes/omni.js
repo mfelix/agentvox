@@ -90,8 +90,15 @@ export function createOmniRouter({ summarizer, queue, tts, config, state }) {
 
         state.history.push(message);
 
+        const audio = {
+          gain: config.audio?.gain ?? 1.0,
+          compressor: config.audio?.compressor ?? false,
+          limiter: config.audio?.limiter ?? false,
+          eq: { bass: 0, mid: 0, treble: 0, ...config.audio?.eq },
+          reverb: { enabled: false, amount: 30, ...config.audio?.reverb },
+        };
         state.broadcast("speaking:start", { ...message, voice, speed });
-        await tts.speak(spokenText, voice, speed);
+        await tts.speak(spokenText, voice, speed, audio);
         state.broadcast("speaking:done", message);
       }
     }, intervalMs);

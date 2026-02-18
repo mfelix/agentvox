@@ -70,6 +70,7 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     }
     if (target === "all") {
       state.globalMute = true;
+      tts.stop();
     } else if (target) {
       state.muted.add(target);
     }
@@ -399,7 +400,8 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     }
     const phrase = PREVIEW_PHRASES[Math.floor(Math.random() * PREVIEW_PHRASES.length)];
     res.json({ previewing: true, voice, phrase });
-    tts.speak(phrase, voice).catch(() => {});
+    const audio = getAudioState();
+    tts.speak(phrase, voice, 1.0, audio).catch(() => {});
   });
 
   router.get("/history", (req, res) => {
@@ -475,6 +477,10 @@ async function _processMessage(message, { tts, summarizer, config, state }) {
   // Add to history
   state.history.push(message);
   if (state.history.length > 200) state.history.shift();
+
+  // Re-check mute — summarization may have taken a while
+  if (state.globalMute) return;
+  if (state.muted.has(message.source) || state.muted.has(message.project)) return;
 
   // Speak with audio processing
   const audio = {
