@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AgentVox Dashboard - WebSocket Client & UI
+   AgentVox Presence — WebSocket Client & UI
    ========================================================================== */
 
 const state = {
@@ -160,6 +160,18 @@ function handleEvent(evt, data) {
       renderSources();
       break;
 
+    case "source:removed":
+      state.sources.delete(data.source);
+      state.history = state.history.filter((m) => m.source !== data.source);
+      state.muted = state.muted.filter((m) => m !== data.source);
+      delete state.sourceNames[data.source];
+      if (state.voices.sources) delete state.voices.sources[data.source];
+      if (state.speed.sources) delete state.speed.sources[data.source];
+      if (state.personality.sources) delete state.personality.sources[data.source];
+      if (state.speaking && state.speaking.source === data.source) state.speaking = null;
+      renderAll();
+      break;
+
     case "sources:rename":
       state.sourceNames = data.sourceNames || {};
       renderAll();
@@ -172,6 +184,58 @@ function handleEvent(evt, data) {
 
   }
 }
+
+// --- Helpers ---
+
+function truncate(text, max) {
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max) + "..." : text;
+}
+
+function badgeClass(source) {
+  if (!source) return "custom";
+  if (source === "claude-code") return "claude-code";
+  if (source === "codex") return "codex";
+  if (source === "omni") return "omni";
+  return "custom";
+}
+
+function esc(str) {
+  if (!str) return "";
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function sourceColor(source) {
+  if (source === "claude-code") return "var(--claude-code)";
+  if (source === "codex") return "var(--codex)";
+  if (source === "omni") return "var(--omni)";
+  return "var(--custom)";
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + "m ago";
+  const hours = Math.floor(minutes / 60);
+  return hours + "h ago";
+}
+
+function getPersonality(type, name) {
+  const defaults = state.personality.default || { verbosity: 2, vibe: "chill", humor: 25 };
+  if (type === "source" && state.personality.sources && state.personality.sources[name]) {
+    return { ...defaults, ...state.personality.sources[name] };
+  }
+  if (type === "project" && state.personality.projects && state.personality.projects[name]) {
+    return { ...defaults, ...state.personality.projects[name] };
+  }
+  return defaults;
+}
+
+const VERBOSITY_LABELS = { 1: "Telegraphic", 2: "Terse", 3: "Normal", 4: "Detailed", 5: "Narrative" };
 
 // --- Render Functions ---
 
@@ -188,274 +252,267 @@ function renderAll() {
 
 function renderConnectionStatus() {
   const el = document.getElementById("connection-status");
-  const textEl = el.querySelector(".connection-text");
+  if (!el) return;
   if (state.connected) {
-    el.className = "connection-indicator connected";
-    el.title = "WebSocket connected";
-    textEl.textContent = "Connected";
+    el.className = "connection-dot connected";
+    el.title = "Connected";
   } else {
-    el.className = "connection-indicator disconnected";
-    el.title = "WebSocket disconnected - reconnecting...";
-    textEl.textContent = "Disconnected";
+    el.className = "connection-dot disconnected";
+    el.title = "Disconnected - reconnecting...";
   }
 }
 
 function renderSpeaking() {
-  const section = document.getElementById("now-speaking");
-  if (!state.speaking) {
-    section.classList.add("hidden");
-    return;
+  const sourceEl = document.getElementById("voice-source");
+  const textEl = document.getElementById("voice-text");
+  const waveform = document.getElementById("waveform");
+  if (!sourceEl || !textEl || !waveform) return;
+
+  if (state.speaking) {
+    const src = state.speaking.source || "";
+    const color = sourceColor(src);
+
+    // Source label
+    sourceEl.textContent = displayName(src);
+    sourceEl.style.color = color;
+
+    // Spoken text
+    textEl.textContent = state.speaking.spokenText || state.speaking.context || "";
+    textEl.classList.remove("idle");
+
+    // Waveform
+    waveform.classList.add("active");
+    waveform.querySelectorAll(".wave-bar").forEach((bar) => {
+      bar.style.background = color;
+    });
+
+    // Speaking orb
+    document.querySelectorAll("#source-orbs .orb").forEach((orb) => {
+      orb.classList.remove("speaking");
+    });
+    const activeOrb = document.querySelector(`#source-orbs .orb[data-source="${CSS.escape(src)}"]`);
+    if (activeOrb) activeOrb.classList.add("speaking");
+  } else {
+    textEl.classList.add("idle");
+    waveform.classList.remove("active");
+    document.querySelectorAll("#source-orbs .orb").forEach((orb) => {
+      orb.classList.remove("speaking");
+    });
   }
-
-  section.classList.remove("hidden");
-
-  // Apply source-specific styling
-  section.className = "panel panel-speaking";
-  const src = state.speaking.source || "";
-  if (src === "codex") section.classList.add("source-codex");
-  else if (src === "omni") section.classList.add("source-omni");
-
-  const sourceEl = document.getElementById("speaking-source");
-  sourceEl.textContent = displayName(src);
-  sourceEl.className = "source-badge " + badgeClass(src);
-
-  document.getElementById("speaking-project").textContent = state.speaking.project || "";
-
-  const branchEl = document.getElementById("speaking-branch");
-  branchEl.textContent = state.speaking.branch ? "on " + state.speaking.branch : "";
-
-  const textEl = document.getElementById("speaking-text");
-  textEl.textContent = state.speaking.spokenText || state.speaking.context || "";
 }
 
 function renderQueue() {
-  const bar = document.getElementById("queue-bar");
-  const countEl = document.getElementById("queue-count");
+  const indicator = document.getElementById("queue-indicator");
+  const textEl = document.getElementById("queue-text");
   const itemsEl = document.getElementById("queue-items");
-  const caretEl = document.getElementById("queue-caret");
+  if (!indicator) return;
+
   const count = state.queue.length;
 
   if (count === 0) {
-    bar.classList.add("hidden");
-    state.queueExpanded = false;
+    indicator.classList.remove("visible");
     return;
   }
 
-  bar.classList.remove("hidden");
-  countEl.textContent = count;
-  caretEl.innerHTML = state.queueExpanded ? "&#9662;" : "&#9656;";
+  indicator.classList.add("visible");
+  if (textEl) textEl.textContent = count + " queued";
 
-  if (state.queueExpanded) {
-    itemsEl.classList.add("expanded");
+  if (itemsEl) {
     itemsEl.innerHTML = state.queue
       .map((m) => {
-        const priority = m.priority || "normal";
-        return `
-          <div class="message-card">
-            <span class="priority-indicator ${esc(priority)}"></span>
-            <div class="meta">
-              <span class="source-badge ${badgeClass(m.source)}">${esc(displayName(m.source))}</span>
-            </div>
-            <div class="content">
-              <span class="project-name">${esc(m.project || "")}</span>
-              ${m.branch ? `<span class="branch-name">on ${esc(m.branch)}</span>` : ""}
-              <div class="text">${esc(truncate(m.context || m.summary || "", 100))}</div>
-            </div>
-          </div>
-        `;
+        const color = sourceColor(m.source);
+        const text = esc(truncate(m.context || m.summary || m.spokenText || "", 100));
+        return `<div class="queue-item">
+          <div class="queue-item-dot" style="background: ${color}"></div>
+          <div class="queue-item-text">${text}</div>
+        </div>`;
       })
       .join("");
-  } else {
-    itemsEl.classList.remove("expanded");
-    itemsEl.innerHTML = "";
   }
 }
 
 function renderHistory() {
-  const list = document.getElementById("history-list");
-  const recent = state.history.slice(-30).reverse();
+  const stream = document.getElementById("message-stream");
+  if (!stream) return;
+
+  const recent = state.history.slice(-5).reverse();
+  const clearBtn = document.getElementById("clear-stream");
 
   if (recent.length === 0) {
-    list.innerHTML = '<div class="empty-state">No messages yet</div>';
+    stream.innerHTML = "";
+    if (clearBtn) clearBtn.classList.remove("visible");
     return;
   }
 
-  list.innerHTML = recent
+  if (clearBtn) clearBtn.classList.add("visible");
+
+  stream.innerHTML = recent
     .map((m) => {
-      const time = m.receivedAt
-        ? new Date(m.receivedAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "";
-      return `
-        <div class="message-card">
-          <span class="time">${esc(time)}</span>
-          <div class="meta">
-            <span class="source-badge ${badgeClass(m.source)}">${esc(displayName(m.source || ""))}</span>
-          </div>
-          <div class="content">
-            <span class="project-name">${esc(m.project || "")}</span>
-            ${m.branch ? `<span class="branch-name">on ${esc(m.branch)}</span>` : ""}
-            <div class="text">${esc(truncate(m.spokenText || m.context || "", 120))}</div>
-          </div>
-        </div>
-      `;
+      const color = sourceColor(m.source);
+      const text = esc(truncate(m.spokenText || m.context || "", 120));
+      const time = timeAgo(m.receivedAt);
+      return `<div class="stream-msg">
+        <div class="stream-dot" style="background: ${color}"></div>
+        <div class="stream-text">${text}</div>
+        <div class="stream-time">${esc(time)}</div>
+      </div>`;
     })
     .join("");
 }
 
 function renderSources() {
-  const list = document.getElementById("sources-list");
+  const container = document.getElementById("source-orbs");
+  if (!container) return;
 
-  // Combine sources and projects into mute targets
   const allSources = [...state.sources];
   const allProjects = [...state.projects];
 
   if (allSources.length === 0 && allProjects.length === 0) {
-    list.innerHTML = '<div class="empty-state">No sources connected</div>';
+    container.innerHTML = "";
     return;
   }
 
   let html = "";
 
-  // Default settings bar — distinct elevated bar, no Mute/Clear
-  const defaultSpeed = state.speed.default || 1.0;
-  const defaultVoiceHtml = `<select class="vibe-select" onchange="changeVoice('default', '', this.value)" title="Default voice">
-    ${state.availableVoices.map(v => `<option value="${esc(v)}"${(state.voices.default || 'jean') === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
-  </select>`;
-  html += `
-    <div class="source-control-group default-settings">
-      <div class="source-row source-row-primary">
-        <span class="default-label">DEFAULT</span>
-      </div>
-      ${renderPersonalityRow('default', '', { voiceHtml: defaultVoiceHtml, speedVal: defaultSpeed, speedType: 'default', speedName: '' })}
-    </div>
-  `;
-
-  // Source cards — two-row dense layout
+  // Source orbs
   for (const s of allSources) {
-    const isMuted = state.muted.includes(s);
-    const messageCount = state.history.filter((m) => m.source === s).length;
-    const sourceVoice = (state.voices.sources && state.voices.sources[s]) || "";
-    const sourceSpeed = (state.speed.sources && state.speed.sources[s]) || "";
-    const sourceSpeedVal = sourceSpeed || defaultSpeed;
-    const sourceVoiceHtml = `<select class="vibe-select" onchange="changeVoice('source', '${esc(s)}', this.value)" title="Voice for ${esc(s)}">
-      <option value=""${!sourceVoice ? ' selected' : ''}>default (${esc(state.voices.default || 'jean')})</option>
-      ${state.availableVoices.map(v => `<option value="${esc(v)}"${sourceVoice === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
-    </select>`;
-    const isEditing = state.editingSource === s;
-    const announceChecked = (state.personality.sources && state.personality.sources[s] && state.personality.sources[s].announceSource) || false;
-    html += `
-      <div class="source-control-group source-group">
-        <div class="source-row source-row-primary">
-          ${isEditing
-            ? `<input class="source-rename-input" id="rename-input-${esc(s)}" value="${esc(displayName(s))}" onkeydown="handleRenameKey(event, '${esc(s)}')" onblur="handleRenameBlur(event, '${esc(s)}')" />`
-            : `<span class="source-badge ${badgeClass(s)}" onclick="startRename('${esc(s)}')" style="cursor:pointer">${esc(displayName(s))}</span><button class="source-edit-btn" onclick="startRename('${esc(s)}')" title="Rename source">&#9998;</button>`
-          }
-          <span class="source-count">${messageCount} msg${messageCount !== 1 ? "s" : ""}</span>
-          <label class="announce-toggle" title="Announce source name before speaking">
-            <input type="checkbox" ${announceChecked ? "checked" : ""} onchange="toggleAnnounce('${esc(s)}', this.checked, 'source')" />
-            Announce
-          </label>
-          <div class="source-actions">
-            <button class="btn btn-sm ${isMuted ? "active" : ""}" onclick="toggleMute('${esc(s)}')">
-              ${isMuted ? "Unmute" : "Mute"}
-            </button>
-            <button class="btn btn-sm btn-clear-source" onclick="clearSource('${esc(s)}')" title="Clear messages from ${esc(s)}">Clear</button>
-          </div>
-        </div>
-        ${renderPersonalityRow('source', s, { voiceHtml: sourceVoiceHtml, speedVal: sourceSpeedVal, speedType: 'source', speedName: s })}
-      </div>
-    `;
+    html += buildOrbHtml(s, "source");
   }
 
-  // Project cards — same two-row dense layout as source cards
+  // Project orbs
   for (const p of allProjects) {
-    const isMuted = state.muted.includes(p);
-    const messageCount = state.history.filter((m) => m.project === p).length;
-    const projectVoice = (state.voices.projects && state.voices.projects[p]) || "";
-    const projectSpeed = (state.speed.projects && state.speed.projects[p]) || "";
-    const projectSpeedVal = projectSpeed || defaultSpeed;
-    const projectVoiceHtml = `<select class="vibe-select" onchange="changeVoice('project', '${esc(p)}', this.value)" title="Voice for ${esc(p)}">
-      <option value=""${!projectVoice ? ' selected' : ''}>default (${esc(state.voices.default || 'jean')})</option>
-      ${state.availableVoices.map(v => `<option value="${esc(v)}"${projectVoice === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
-    </select>`;
-    const isEditingProject = state.editingSource === p;
-    const announceProjectChecked = (state.personality.projects && state.personality.projects[p] && state.personality.projects[p].announceSource) || false;
-    html += `
-      <div class="source-control-group source-group">
-        <div class="source-row source-row-primary">
-          ${isEditingProject
-            ? `<input class="source-rename-input" id="rename-input-${esc(p)}" value="${esc(displayName(p))}" onkeydown="handleRenameKey(event, '${esc(p)}')" onblur="handleRenameBlur(event, '${esc(p)}')" />`
-            : `<span class="project-name project-name-editable" onclick="startRename('${esc(p)}')">${esc(displayName(p))}</span><button class="source-edit-btn" onclick="startRename('${esc(p)}')" title="Rename project">&#9998;</button>`
-          }
-          <span class="source-count">${messageCount} msg${messageCount !== 1 ? "s" : ""}</span>
-          <label class="announce-toggle" title="Announce project name before speaking">
-            <input type="checkbox" ${announceProjectChecked ? "checked" : ""} onchange="toggleAnnounce('${esc(p)}', this.checked, 'project')" />
-            Announce
-          </label>
-          <div class="source-actions">
-            <button class="btn btn-sm ${isMuted ? "active" : ""}" onclick="toggleMute('${esc(p)}')">
-              ${isMuted ? "Unmute" : "Mute"}
-            </button>
-            <button class="btn btn-sm btn-clear-source" onclick="clearSource('${esc(p)}')" title="Clear messages from ${esc(p)}">Clear</button>
-          </div>
+    html += buildOrbHtml(p, "project");
+  }
+
+  container.innerHTML = html;
+}
+
+function buildOrbHtml(name, type) {
+  const isMuted = state.muted.includes(name);
+  const isSpeaking = state.speaking && state.speaking.source === name;
+  const color = sourceColor(name);
+  const dName = displayName(name);
+  const escapedName = esc(name);
+  const defaultVoice = state.voices.default || "jean";
+
+  // Determine voice for this source/project
+  const voiceBucket = type === "project" ? state.voices.projects : state.voices.sources;
+  const currentVoice = (voiceBucket && voiceBucket[name]) || "";
+
+  // Speed
+  const speedBucket = type === "project" ? state.speed.projects : state.speed.sources;
+  const currentSpeed = (speedBucket && speedBucket[name]) || state.speed.default || 1.0;
+  const speedPercent = Math.round(currentSpeed * 100);
+
+  // Personality (vibe)
+  const p = getPersonality(type, name);
+
+  // Orb CSS classes
+  let orbClasses = "orb";
+  if (isMuted) orbClasses += " muted";
+  if (isSpeaking) orbClasses += " speaking";
+
+  // For unknown sources, use a data attribute for custom color
+  const isKnown = name === "claude-code" || name === "codex" || name === "omni";
+  const orbInnerStyle = !isKnown ? `style="background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.3), var(--custom) 60%, rgba(100,100,100,0.8))"` : "";
+  const orbGlowStyle = !isKnown ? `style="background: var(--custom)"` : "";
+
+  // Voice options
+  const voiceOptions = state.availableVoices
+    .map((v) => `<option value="${esc(v)}"${currentVoice === v ? " selected" : ""}>${esc(v)}</option>`)
+    .join("");
+
+  // Vibe chips
+  const vibeChips = state.availableVibes
+    .map((v) => `<button class="vibe-chip${p.vibe === v ? " active" : ""}" data-vibe="${esc(v)}">${esc(v)}</button>`)
+    .join("");
+
+  return `<div class="orb-container" data-source="${escapedName}" data-type="${type}">
+    <div class="${orbClasses}" data-source="${escapedName}">
+      <div class="orb-inner" ${orbInnerStyle}></div>
+      <div class="orb-glow" ${orbGlowStyle}></div>
+    </div>
+    <div class="orb-mute-line"></div>
+    <div class="orb-tooltip">${esc(dName)}</div>
+    <div class="source-settings" id="settings-${escapedName}">
+      <div class="source-settings-header">
+        <div class="source-settings-name">
+          <div class="source-settings-dot" style="background: ${color}"></div>
+          <span>${esc(dName)}</span>
         </div>
-        ${renderPersonalityRow('project', p, { voiceHtml: projectVoiceHtml, speedVal: projectSpeedVal, speedType: 'project', speedName: p })}
+        <button class="source-settings-close" aria-label="Close">&times;</button>
       </div>
-    `;
-  }
-
-  list.innerHTML = html;
-
-  // Auto-focus rename input if editing
-  if (state.editingSource) {
-    const input = document.getElementById('rename-input-' + state.editingSource);
-    if (input) {
-      // Size input to content
-      input.style.width = Math.max(120, Math.min(300, input.value.length * 8 + 20)) + 'px';
-      input.focus();
-      input.select();
-    }
-  }
+      <div class="source-settings-row">
+        <div class="source-settings-label">Voice</div>
+        <select class="source-voice-select" data-source="${escapedName}">
+          <option value=""${!currentVoice ? " selected" : ""}>default (${esc(defaultVoice)})</option>
+          ${voiceOptions}
+        </select>
+      </div>
+      <div class="source-settings-row">
+        <div class="source-settings-label">Speed</div>
+        <div class="speed-control">
+          <input type="range" min="50" max="200" value="${speedPercent}" class="speed-slider" data-source="${escapedName}">
+          <span class="speed-value">${parseFloat(currentSpeed).toFixed(1)}x</span>
+        </div>
+      </div>
+      <div class="source-settings-row">
+        <div class="source-settings-label">Vibe</div>
+        <div class="vibe-chips">${vibeChips}</div>
+      </div>
+      <div class="source-settings-row mute-source-row">
+        <span class="mute-source-label">Mute source</span>
+        <button class="toggle source-mute-toggle${isMuted ? " on" : ""}" data-source="${escapedName}" aria-label="Mute source"></button>
+      </div>
+      <div class="source-settings-divider"></div>
+      <button class="source-remove-btn" data-source="${escapedName}" aria-label="Remove source">Remove source</button>
+    </div>
+  </div>`;
 }
 
 function renderMuteButton() {
   const btn = document.getElementById("mute-all");
+  if (!btn) return;
+  const speakerIcon = btn.querySelector(".speaker-icon");
+  const mutedIcon = btn.querySelector(".speaker-muted-icon");
+
   if (state.globalMute) {
-    btn.innerHTML = '<span class="mute-icon">&#9834;</span> Unmute All';
-    btn.className = "btn btn-mute active";
+    if (mutedIcon) mutedIcon.style.display = "block";
+    if (speakerIcon) speakerIcon.style.display = "none";
+    btn.classList.add("muted-state");
   } else {
-    btn.innerHTML = '<span class="mute-icon">&#9834;</span> Mute All';
-    btn.className = "btn btn-mute";
+    if (mutedIcon) mutedIcon.style.display = "none";
+    if (speakerIcon) speakerIcon.style.display = "block";
+    btn.classList.remove("muted-state");
   }
 }
 
 function renderOmniButton() {
-  const btn = document.getElementById("omni-toggle");
+  const toggle = document.getElementById("omni-toggle");
+  const label = document.getElementById("omni-label");
+  if (!toggle) return;
+
   if (state.omniActive) {
-    btn.innerHTML = '<span class="omni-icon">&#9678;</span> Omni On';
-    btn.className = "btn btn-omni active";
+    toggle.classList.add("on");
+    if (label) label.classList.add("active");
   } else {
-    btn.innerHTML = '<span class="omni-icon">&#9678;</span> Omni';
-    btn.className = "btn btn-omni";
+    toggle.classList.remove("on");
+    if (label) label.classList.remove("active");
   }
 }
-
-// --- Audio Controls ---
 
 function renderAudioControls() {
   const gainEl = document.getElementById("audio-gain");
   const gainValEl = document.getElementById("audio-gain-val");
   const compEl = document.getElementById("audio-compressor");
   const limiterEl = document.getElementById("audio-limiter");
+
   if (gainEl) {
     gainEl.value = Math.round(state.audio.gain * 100);
-    gainValEl.textContent = Math.round(state.audio.gain * 100) + "%";
+    if (gainValEl) gainValEl.textContent = Math.round(state.audio.gain * 100) + "%";
   }
-  if (compEl) compEl.checked = state.audio.compressor;
-  if (limiterEl) limiterEl.checked = state.audio.limiter;
+  if (compEl) compEl.classList.toggle("on", state.audio.compressor);
+  if (limiterEl) limiterEl.classList.toggle("on", state.audio.limiter);
 
   // EQ
   const eq = state.audio.eq || {};
@@ -465,7 +522,7 @@ function renderAudioControls() {
     if (el) {
       el.value = eq[band] || 0;
       const v = eq[band] || 0;
-      valEl.textContent = (v > 0 ? "+" : "") + v + " dB";
+      if (valEl) valEl.textContent = (v > 0 ? "+" : "") + v + " dB";
     }
   }
 
@@ -474,17 +531,19 @@ function renderAudioControls() {
   const reverbEl = document.getElementById("audio-reverb");
   const reverbAmtEl = document.getElementById("audio-reverb-amount");
   const reverbAmtValEl = document.getElementById("audio-reverb-amount-val");
-  const reverbAmtField = document.getElementById("audio-reverb-amount-field");
-  if (reverbEl) reverbEl.checked = reverb.enabled;
+  const reverbAmtSection = document.getElementById("reverb-amount");
+
+  if (reverbEl) reverbEl.classList.toggle("on", reverb.enabled);
   if (reverbAmtEl) {
     reverbAmtEl.value = reverb.amount ?? 30;
-    reverbAmtValEl.textContent = (reverb.amount ?? 30) + "%";
+    if (reverbAmtValEl) reverbAmtValEl.textContent = (reverb.amount ?? 30) + "%";
   }
-  if (reverbAmtField) {
-    reverbAmtField.style.opacity = reverb.enabled ? "1" : "0.35";
-    reverbAmtField.style.pointerEvents = reverb.enabled ? "auto" : "none";
+  if (reverbAmtSection) {
+    reverbAmtSection.classList.toggle("visible", !!reverb.enabled);
   }
 }
+
+// --- API Functions ---
 
 function saveAudioSettings() {
   fetch("/api/audio", {
@@ -493,66 +552,6 @@ function saveAudioSettings() {
     body: JSON.stringify(state.audio),
   }).catch((err) => console.error("Failed to save audio settings:", err));
 }
-
-// Gain
-document.getElementById("audio-gain").addEventListener("input", (e) => {
-  const val = parseInt(e.target.value) / 100;
-  document.getElementById("audio-gain-val").textContent = e.target.value + "%";
-  state.audio.gain = val;
-});
-document.getElementById("audio-gain").addEventListener("change", () => saveAudioSettings());
-
-// Compressor & Limiter
-document.getElementById("audio-compressor").addEventListener("change", (e) => {
-  state.audio.compressor = e.target.checked;
-  saveAudioSettings();
-});
-document.getElementById("audio-limiter").addEventListener("change", (e) => {
-  state.audio.limiter = e.target.checked;
-  saveAudioSettings();
-});
-
-// EQ bands
-for (const band of ["bass", "mid", "treble"]) {
-  document.getElementById(`audio-eq-${band}`).addEventListener("input", (e) => {
-    const v = parseInt(e.target.value);
-    document.getElementById(`audio-eq-${band}-val`).textContent = (v > 0 ? "+" : "") + v + " dB";
-    if (!state.audio.eq) state.audio.eq = {};
-    state.audio.eq[band] = v;
-  });
-  document.getElementById(`audio-eq-${band}`).addEventListener("change", () => saveAudioSettings());
-}
-
-// Reverb
-document.getElementById("audio-reverb").addEventListener("change", (e) => {
-  if (!state.audio.reverb) state.audio.reverb = {};
-  state.audio.reverb.enabled = e.target.checked;
-  renderAudioControls();
-  saveAudioSettings();
-});
-document.getElementById("audio-reverb-amount").addEventListener("input", (e) => {
-  const v = parseInt(e.target.value);
-  document.getElementById("audio-reverb-amount-val").textContent = v + "%";
-  if (!state.audio.reverb) state.audio.reverb = {};
-  state.audio.reverb.amount = v;
-});
-document.getElementById("audio-reverb-amount").addEventListener("change", () => saveAudioSettings());
-
-// --- User Actions ---
-
-document.getElementById("mute-all").addEventListener("click", () => {
-  const endpoint = state.globalMute ? "/api/unmute" : "/api/mute";
-  fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target: "all" }),
-  });
-});
-
-document.getElementById("omni-toggle").addEventListener("click", () => {
-  const endpoint = state.omniActive ? "/api/omni/off" : "/api/omni/on";
-  fetch(endpoint, { method: "POST" });
-});
 
 function toggleGlobalMute() {
   const endpoint = state.globalMute ? "/api/unmute" : "/api/mute";
@@ -620,62 +619,8 @@ function changePersonality(type, name, field, value) {
   }).catch((err) => console.error("Failed to save personality:", err));
 }
 
-function getPersonality(type, name) {
-  const defaults = state.personality.default || { verbosity: 2, vibe: "chill", humor: 25 };
-  if (type === "source" && state.personality.sources && state.personality.sources[name]) {
-    return { ...defaults, ...state.personality.sources[name] };
-  }
-  if (type === "project" && state.personality.projects && state.personality.projects[name]) {
-    return { ...defaults, ...state.personality.projects[name] };
-  }
-  return defaults;
-}
-
-const VERBOSITY_LABELS = { 1: "Telegraphic", 2: "Terse", 3: "Normal", 4: "Detailed", 5: "Narrative" };
-
-function renderPersonalityRow(type, name, { voiceHtml, speedVal, speedType, speedName } = {}) {
-  const p = getPersonality(type, name);
-  const nameAttr = esc(name);
-  return `
-    <div class="personality-controls">
-      ${voiceHtml ? `<div class="personality-field">
-        <label class="personality-label">Voice</label>
-        ${voiceHtml}
-      </div>` : ''}
-      ${speedVal !== undefined ? `<div class="personality-field">
-        <label class="personality-label">Speed</label>
-        <input type="range" class="personality-slider speed-inline-slider" min="0.5" max="2.0" step="0.1" value="${speedVal}"
-          onchange="changeSpeed('${speedType}', '${esc(speedName)}', this.value)"
-          oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(1) + 'x'">
-        <span class="personality-value">${parseFloat(speedVal).toFixed(1)}x</span>
-      </div>` : ''}
-      <div class="personality-field">
-        <label class="personality-label">Verbosity</label>
-        <input type="range" class="personality-slider" min="1" max="5" step="1" value="${p.verbosity}"
-          onchange="changePersonality('${type}', '${nameAttr}', 'verbosity', this.value)"
-          oninput="this.nextElementSibling.textContent = {1:'Telegraphic',2:'Terse',3:'Normal',4:'Detailed',5:'Narrative'}[this.value]">
-        <span class="personality-value">${VERBOSITY_LABELS[p.verbosity] || "Terse"}</span>
-      </div>
-      <div class="personality-field">
-        <label class="personality-label">Vibe</label>
-        <select class="vibe-select" onchange="changePersonality('${type}', '${nameAttr}', 'vibe', this.value)">
-          ${state.availableVibes.map(v => `<option value="${esc(v)}"${p.vibe === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="personality-field">
-        <label class="personality-label">Humor</label>
-        <input type="range" class="personality-slider humor-slider" min="0" max="100" step="5" value="${p.humor}"
-          onchange="changePersonality('${type}', '${nameAttr}', 'humor', this.value)"
-          oninput="this.nextElementSibling.textContent = this.value + '%'">
-        <span class="personality-value">${p.humor}%</span>
-      </div>
-    </div>
-  `;
-}
-
 function toggleQueueExpand() {
-  state.queueExpanded = !state.queueExpanded;
-  renderQueue();
+  // No-op in zen UI (queue is now a popup)
 }
 
 function clearQueue() {
@@ -690,6 +635,10 @@ function clearSource(target) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target }),
   });
+}
+
+function removeSource(source) {
+  fetch(`/api/sources/${encodeURIComponent(source)}`, { method: "DELETE" });
 }
 
 function startRename(source) {
@@ -744,28 +693,6 @@ function toggleAnnounce(name, checked, type) {
   }).catch((err) => console.error("Failed to save announce setting:", err));
 }
 
-// --- Helpers ---
-
-function truncate(text, max) {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "..." : text;
-}
-
-function badgeClass(source) {
-  if (!source) return "custom";
-  if (source === "claude-code") return "claude-code";
-  if (source === "codex") return "codex";
-  if (source === "omni") return "omni";
-  return "custom";
-}
-
-function esc(str) {
-  if (!str) return "";
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 // --- Initialize ---
 
 // Fetch personality from REST API as a backup (in case WS init is stale or server was restarted)
@@ -785,9 +712,222 @@ function fetchPersonality() {
     .catch(() => {});
 }
 
+// --- Event Listeners (static elements) ---
+
+// Mute All button
+document.getElementById("mute-all").addEventListener("click", () => {
+  toggleGlobalMute();
+});
+
+// Clear message stream
+document.getElementById("clear-stream").addEventListener("click", () => {
+  state.history = [];
+  renderHistory();
+});
+
+// Omni toggle
+document.getElementById("omni-toggle").addEventListener("click", () => {
+  const endpoint = state.omniActive ? "/api/omni/off" : "/api/omni/on";
+  fetch(endpoint, { method: "POST" });
+});
+
+// Gear button -> toggle audio settings panel
+document.getElementById("gear-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const panel = document.getElementById("audio-settings");
+  panel.classList.toggle("open");
+});
+
+// Audio settings panel -> prevent close on click inside
+document.getElementById("audio-settings").addEventListener("click", (e) => {
+  e.stopPropagation();
+});
+
+// Gain slider
+document.getElementById("audio-gain").addEventListener("input", (e) => {
+  const val = parseInt(e.target.value) / 100;
+  document.getElementById("audio-gain-val").textContent = e.target.value + "%";
+  state.audio.gain = val;
+});
+document.getElementById("audio-gain").addEventListener("change", () => saveAudioSettings());
+
+// Compressor pill
+document.getElementById("audio-compressor").addEventListener("click", () => {
+  state.audio.compressor = !state.audio.compressor;
+  document.getElementById("audio-compressor").classList.toggle("on", state.audio.compressor);
+  saveAudioSettings();
+});
+
+// Limiter pill
+document.getElementById("audio-limiter").addEventListener("click", () => {
+  state.audio.limiter = !state.audio.limiter;
+  document.getElementById("audio-limiter").classList.toggle("on", state.audio.limiter);
+  saveAudioSettings();
+});
+
+// Reverb pill
+document.getElementById("audio-reverb").addEventListener("click", () => {
+  if (!state.audio.reverb) state.audio.reverb = {};
+  state.audio.reverb.enabled = !state.audio.reverb.enabled;
+  document.getElementById("audio-reverb").classList.toggle("on", state.audio.reverb.enabled);
+  document.getElementById("reverb-amount").classList.toggle("visible", state.audio.reverb.enabled);
+  saveAudioSettings();
+});
+
+// EQ bands
+for (const band of ["bass", "mid", "treble"]) {
+  document.getElementById(`audio-eq-${band}`).addEventListener("input", (e) => {
+    const v = parseInt(e.target.value);
+    document.getElementById(`audio-eq-${band}-val`).textContent = (v > 0 ? "+" : "") + v + " dB";
+    if (!state.audio.eq) state.audio.eq = {};
+    state.audio.eq[band] = v;
+  });
+  document.getElementById(`audio-eq-${band}`).addEventListener("change", () => saveAudioSettings());
+}
+
+// Reverb amount slider
+document.getElementById("audio-reverb-amount").addEventListener("input", (e) => {
+  const v = parseInt(e.target.value);
+  document.getElementById("audio-reverb-amount-val").textContent = v + "%";
+  if (!state.audio.reverb) state.audio.reverb = {};
+  state.audio.reverb.amount = v;
+});
+document.getElementById("audio-reverb-amount").addEventListener("change", () => saveAudioSettings());
+
+// Queue indicator click -> toggle popup
+document.getElementById("queue-indicator").addEventListener("click", (e) => {
+  e.stopPropagation();
+  document.getElementById("queue-popup").classList.toggle("open");
+});
+
+// Queue popup -> prevent close on click inside
+document.getElementById("queue-popup").addEventListener("click", (e) => {
+  e.stopPropagation();
+});
+
+// --- Event Delegation for Source Orbs ---
+
+document.getElementById("source-orbs").addEventListener("click", (e) => {
+  e.stopPropagation();
+
+  // Close button
+  const closeBtn = e.target.closest(".source-settings-close");
+  if (closeBtn) {
+    const panel = closeBtn.closest(".source-settings");
+    if (panel) panel.classList.remove("open");
+    return;
+  }
+
+  // Prevent clicks inside settings panel from toggling the panel
+  if (e.target.closest(".source-settings")) {
+    // Voice select
+    const voiceSelect = e.target.closest(".source-voice-select");
+    if (voiceSelect) return; // handled by change event
+
+    // Speed slider
+    const speedSlider = e.target.closest(".speed-slider");
+    if (speedSlider) return; // handled by input/change events
+
+    // Vibe chip
+    const vibeChip = e.target.closest(".vibe-chip");
+    if (vibeChip) {
+      const container = vibeChip.closest(".orb-container");
+      const sourceName = container && container.dataset.source;
+      const sourceType = container && container.dataset.type || "source";
+      const vibe = vibeChip.dataset.vibe;
+      if (sourceName && vibe) {
+        changePersonality(sourceType, sourceName, "vibe", vibe);
+        // Update active chip visually
+        vibeChip.closest(".vibe-chips").querySelectorAll(".vibe-chip").forEach((c) => c.classList.remove("active"));
+        vibeChip.classList.add("active");
+      }
+      return;
+    }
+
+    // Mute toggle
+    const muteToggle = e.target.closest(".source-mute-toggle");
+    if (muteToggle) {
+      const sourceName = muteToggle.dataset.source;
+      if (sourceName) toggleMute(sourceName);
+      return;
+    }
+
+    // Remove source
+    const removeBtn = e.target.closest(".source-remove-btn");
+    if (removeBtn) {
+      const sourceName = removeBtn.dataset.source;
+      if (sourceName) removeSource(sourceName);
+      return;
+    }
+
+    return; // Don't toggle panel for other clicks inside settings
+  }
+
+  // Orb click -> toggle settings panel
+  const orb = e.target.closest(".orb");
+  if (orb) {
+    const container = orb.closest(".orb-container");
+    const panel = container && container.querySelector(".source-settings");
+    if (!panel) return;
+
+    // Close all other panels first
+    document.querySelectorAll("#source-orbs .source-settings.open").forEach((p) => {
+      if (p !== panel) p.classList.remove("open");
+    });
+    panel.classList.toggle("open");
+    return;
+  }
+});
+
+// Voice select change (event delegation via capture)
+document.getElementById("source-orbs").addEventListener("change", (e) => {
+  const voiceSelect = e.target.closest(".source-voice-select");
+  if (voiceSelect) {
+    const container = voiceSelect.closest(".orb-container");
+    const sourceName = voiceSelect.dataset.source;
+    const sourceType = container && container.dataset.type || "source";
+    changeVoice(sourceType, sourceName, voiceSelect.value);
+    return;
+  }
+
+  // Speed slider change
+  const speedSlider = e.target.closest(".speed-slider");
+  if (speedSlider) {
+    const container = speedSlider.closest(".orb-container");
+    const sourceName = speedSlider.dataset.source;
+    const sourceType = container && container.dataset.type || "source";
+    const speedVal = parseFloat(speedSlider.value) / 100;
+    changeSpeed(sourceType, sourceName, speedVal);
+    return;
+  }
+});
+
+// Speed slider input (live display update)
+document.getElementById("source-orbs").addEventListener("input", (e) => {
+  const speedSlider = e.target.closest(".speed-slider");
+  if (speedSlider) {
+    const speedValue = speedSlider.closest(".speed-control").querySelector(".speed-value");
+    if (speedValue) {
+      speedValue.textContent = (parseFloat(speedSlider.value) / 100).toFixed(1) + "x";
+    }
+  }
+});
+
+// Click outside -> close all panels
+document.addEventListener("click", () => {
+  // Close all source settings
+  document.querySelectorAll("#source-orbs .source-settings.open").forEach((p) => {
+    p.classList.remove("open");
+  });
+  // Close audio settings
+  document.getElementById("audio-settings").classList.remove("open");
+  // Close queue popup
+  document.getElementById("queue-popup").classList.remove("open");
+});
+
 // Expose functions used by inline handlers to global scope (required for type="module")
 Object.assign(window, {
-  toggleQueueExpand, clearQueue, clearSource,
+  toggleQueueExpand, clearQueue, clearSource, removeSource,
   toggleMute, changeVoice, changeSpeed, changePersonality,
   startRename, handleRenameKey, handleRenameBlur, toggleAnnounce,
 });

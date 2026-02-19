@@ -4,182 +4,132 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AgentVox</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="header-left">
-      <h1>AgentVox</h1>
-      <span id="connection-status" class="connection-indicator disconnected" title="WebSocket disconnected">
-        <span class="dot"></span>
-        <span class="connection-text">Disconnected</span>
-      </span>
+
+<div class="canvas">
+
+  <!-- Connection status - tiny dot in top-left corner -->
+  <div id="connection-status" class="connection-dot disconnected" title="Disconnected"></div>
+
+  <!-- Source Orbs - dynamically populated by app.js -->
+  <div class="orbs" id="source-orbs">
+    <!-- app.js will inject orb-container elements here -->
+  </div>
+
+  <!-- The Voice - center stage -->
+  <div class="voice" id="voice-area">
+    <div class="voice-source" id="voice-source"></div>
+    <div class="voice-text idle" id="voice-text">Waiting for messages...</div>
+    <div class="waveform" id="waveform">
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
     </div>
-    <div class="header-controls">
-      <button id="omni-toggle" class="btn btn-omni" title="Toggle Omni Mode">
-        <span class="omni-icon">&#9678;</span> Omni
+  </div>
+
+  <!-- Message Stream - dynamically populated -->
+  <div class="stream" id="message-stream">
+    <!-- app.js injects stream-msg elements here -->
+  </div>
+  <button class="clear-stream-btn hidden" id="clear-stream" aria-label="Clear messages">clear</button>
+
+  <!-- Bottom-left Controls -->
+  <div class="controls">
+    <div class="volume-group">
+      <button class="icon-btn" id="mute-all" aria-label="Mute All">
+        <svg class="speaker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+        </svg>
+        <svg class="speaker-muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
       </button>
-      <button id="mute-all" class="btn btn-mute" title="Mute All Audio">
-        <span class="mute-icon">&#9834;</span> Mute All
-      </button>
+      <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="75" aria-label="Volume">
     </div>
-  </header>
 
-  <main>
-    <!-- Now Speaking -->
-    <section id="now-speaking" class="panel panel-speaking hidden">
-      <div class="panel-header">
-        <h2>
-          <span class="pulse-dot"></span>
-          Now Speaking
-        </h2>
+    <div class="omni-group">
+      <span class="omni-label" id="omni-label">omni</span>
+      <button class="toggle omni-toggle" id="omni-toggle" aria-label="Toggle Omni"></button>
+    </div>
+
+    <button class="icon-btn gear-btn" id="gear-btn" aria-label="Audio settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Audio Settings Panel (hidden by default) -->
+  <div class="audio-settings" id="audio-settings">
+    <div class="audio-settings-title">Audio Processing</div>
+
+    <div class="audio-row">
+      <span class="audio-row-label">Gain</span>
+      <input type="range" id="audio-gain" min="50" max="500" step="10" value="100">
+      <span class="audio-value" id="audio-gain-val">100%</span>
+    </div>
+
+    <div class="source-settings-label" style="margin-bottom: 10px;">Equalizer</div>
+    <div class="eq-group">
+      <div class="eq-channel">
+        <input type="range" id="audio-eq-bass" min="-12" max="12" step="1" value="0">
+        <label>Lo</label>
+        <span class="audio-value eq-val" id="audio-eq-bass-val">0 dB</span>
       </div>
-      <div class="speaking-card">
-        <div class="speaking-meta">
-          <span class="source-badge" id="speaking-source"></span>
-          <span class="project-name" id="speaking-project"></span>
-          <span class="branch-name" id="speaking-branch"></span>
-        </div>
-        <p class="speaking-text" id="speaking-text"></p>
-        <div class="speaking-wave">
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
+      <div class="eq-channel">
+        <input type="range" id="audio-eq-mid" min="-12" max="12" step="1" value="0">
+        <label>Mid</label>
+        <span class="audio-value eq-val" id="audio-eq-mid-val">0 dB</span>
       </div>
-    </section>
-
-    <!-- Messages -->
-    <section id="messages-section" class="panel">
-      <div class="panel-header">
-        <h2>Messages</h2>
+      <div class="eq-channel">
+        <input type="range" id="audio-eq-treble" min="-12" max="12" step="1" value="0">
+        <label>Hi</label>
+        <span class="audio-value eq-val" id="audio-eq-treble-val">0 dB</span>
       </div>
-      <div id="queue-bar" class="queue-bar hidden">
-        <div class="queue-bar-summary" onclick="toggleQueueExpand()">
-          <span class="queue-bar-label">Queued</span>
-          <span id="queue-count" class="badge-count has-items">0</span>
-          <span id="queue-caret" class="queue-caret">&#9656;</span>
-          <button class="btn btn-sm btn-clear-queue" onclick="event.stopPropagation(); clearQueue()">Clear Q</button>
-        </div>
-        <div id="queue-items" class="queue-items">
-        </div>
+    </div>
+
+    <div class="audio-toggles">
+      <button class="audio-pill" id="audio-compressor">Compressor</button>
+      <button class="audio-pill" id="audio-limiter">Limiter</button>
+      <button class="audio-pill" id="audio-reverb">Reverb</button>
+    </div>
+
+    <div class="reverb-amount" id="reverb-amount">
+      <div class="audio-row">
+        <span class="audio-row-label">Amount</span>
+        <input type="range" id="audio-reverb-amount" min="0" max="100" step="5" value="30">
+        <span class="audio-value" id="audio-reverb-amount-val">30%</span>
       </div>
-      <div id="history-list" class="card-list">
-        <div class="empty-state">No messages yet</div>
+    </div>
+  </div>
+
+  <!-- Queue Indicator (bottom-right) -->
+  <div class="queue-indicator" id="queue-indicator">
+    <div class="queue-dot"></div>
+    <div class="queue-text" id="queue-text">0 queued</div>
+
+    <div class="queue-popup" id="queue-popup">
+      <div class="queue-popup-title">Up Next</div>
+      <div id="queue-items">
+        <!-- app.js populates queue items here -->
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- Sources -->
-    <section id="sources-section" class="panel">
-      <div class="panel-header">
-        <h2>Sources</h2>
-      </div>
-      <div id="sources-list" class="sources-grid">
-        <div class="empty-state">No sources connected</div>
-      </div>
-    </section>
+</div>
 
-    <!-- Audio Processing -->
-    <section id="audio-section" class="panel">
-      <div class="panel-header">
-        <h2>Audio</h2>
-      </div>
-      <div class="audio-panel-body">
-
-        <!-- Dynamics Group -->
-        <div class="audio-group">
-          <div class="audio-group-header">
-            <span class="audio-group-label">Dynamics</span>
-          </div>
-          <div class="audio-group-content">
-            <div class="audio-field audio-field-wide">
-              <label class="audio-label">Gain</label>
-              <input type="range" id="audio-gain" class="audio-slider" min="50" max="500" step="10" value="100">
-              <span class="audio-value" id="audio-gain-val">100%</span>
-            </div>
-            <div class="audio-toggles-row">
-              <div class="audio-toggle-field">
-                <label class="audio-switch">
-                  <input type="checkbox" id="audio-compressor">
-                  <span class="audio-switch-track"><span class="audio-switch-thumb"></span></span>
-                </label>
-                <label class="audio-toggle-label" for="audio-compressor">Compressor</label>
-              </div>
-              <div class="audio-toggle-field">
-                <label class="audio-switch">
-                  <input type="checkbox" id="audio-limiter">
-                  <span class="audio-switch-track"><span class="audio-switch-thumb"></span></span>
-                </label>
-                <label class="audio-toggle-label" for="audio-limiter">Limiter</label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- EQ Group -->
-        <div class="audio-group audio-group-eq">
-          <div class="audio-group-header">
-            <span class="audio-group-label">Equalizer</span>
-          </div>
-          <div class="audio-group-content">
-            <div class="audio-eq-strip">
-              <div class="audio-eq-band">
-                <span class="audio-eq-band-value" id="audio-eq-bass-val">0 dB</span>
-                <div class="audio-eq-slider-wrap">
-                  <div class="audio-eq-center-line"></div>
-                  <input type="range" id="audio-eq-bass" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
-                </div>
-                <span class="audio-eq-band-label">Bass</span>
-                <span class="audio-eq-band-freq">250 Hz</span>
-              </div>
-              <div class="audio-eq-band">
-                <span class="audio-eq-band-value" id="audio-eq-mid-val">0 dB</span>
-                <div class="audio-eq-slider-wrap">
-                  <div class="audio-eq-center-line"></div>
-                  <input type="range" id="audio-eq-mid" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
-                </div>
-                <span class="audio-eq-band-label">Mid</span>
-                <span class="audio-eq-band-freq">1.2 kHz</span>
-              </div>
-              <div class="audio-eq-band">
-                <span class="audio-eq-band-value" id="audio-eq-treble-val">0 dB</span>
-                <div class="audio-eq-slider-wrap">
-                  <div class="audio-eq-center-line"></div>
-                  <input type="range" id="audio-eq-treble" class="audio-slider audio-slider-eq audio-slider-eq-vertical" min="-12" max="12" step="1" value="0" orient="vertical">
-                </div>
-                <span class="audio-eq-band-label">Treble</span>
-                <span class="audio-eq-band-freq">4 kHz</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Effects Group -->
-        <div class="audio-group audio-group-fx">
-          <div class="audio-group-header">
-            <span class="audio-group-label">Effects</span>
-          </div>
-          <div class="audio-group-content">
-            <div class="audio-fx-control">
-              <div class="audio-toggle-field">
-                <label class="audio-switch audio-switch-fx">
-                  <input type="checkbox" id="audio-reverb">
-                  <span class="audio-switch-track audio-switch-track-fx"><span class="audio-switch-thumb"></span></span>
-                </label>
-                <label class="audio-toggle-label" for="audio-reverb">Reverb</label>
-              </div>
-              <div class="audio-field audio-field-wide" id="audio-reverb-amount-field">
-                <label class="audio-label">Wet</label>
-                <input type="range" id="audio-reverb-amount" class="audio-slider audio-slider-reverb" min="0" max="100" step="5" value="30">
-                <span class="audio-value" id="audio-reverb-amount-val">30%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-  </main>
-
-  <script type="module" src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

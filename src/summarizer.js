@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { cleanForSpeech } from "./tts.js";
 
 const VERBOSITY_PROMPTS = {
   1: "Maximum 10 words. Ultra-brief. Just the essential fact, nothing more.",
@@ -29,12 +30,17 @@ function buildPrompt(personality = {}) {
   const vibe = personality.vibe || "chill";
   const humor = personality.humor ?? 25;
 
-  return `Summarize this coding event for spoken audio.
+  return `Summarize this coding event for spoken audio. The listener is NOT looking at code — they're just listening.
 ${VERBOSITY_PROMPTS[v] || VERBOSITY_PROMPTS[2]}
 ${VIBE_PROMPTS[vibe] || VIBE_PROMPTS.chill}
 ${humorPrompt(humor)}
 NEVER start with "The agent" or "The assistant" or "The coding". Vary your sentence openings.
-Never include file paths, UUIDs, or technical jargon — use natural language.
+Describe WHAT happened in plain human language. Focus on the purpose and outcome, not implementation details.
+NEVER include: function names, line numbers, variable names, file paths, URLs, port numbers, code snippets, method calls, CSS properties, or any token that only makes sense when reading code.
+BAD: "Fixed renderHistory at line 338 where slice minus five reverse produces five messages"
+BAD: "Server running at http 127.0.0.1 colon 9876"
+GOOD: "Fixed a bug where the oldest message was showing up brightest instead of fading out"
+GOOD: "The server is back up and ready"
 NEVER use emojis. Plain text only, no emoji characters whatsoever.
 Respond with ONLY the summary text, nothing else.`;
 }
@@ -44,13 +50,16 @@ function buildOmniPrompt(project, branch, activity, personality = {}) {
   const vibe = personality.vibe || "chill";
   const humor = personality.humor ?? 25;
 
-  return `Narrate a coding agent's live activity on ${project}${branch ? ` (${branch} branch)` : ""}.
+  return `Narrate a coding agent's live activity on ${project}${branch ? ` (${branch} branch)` : ""}. The listener is NOT looking at code — they're just listening.
 ${VERBOSITY_PROMPTS[v] || VERBOSITY_PROMPTS[2]}
 ${VIBE_PROMPTS[vibe] || VIBE_PROMPTS.chill}
 ${humorPrompt(humor)}
 Speak in present tense. NEVER start with "The agent" or "The assistant".
-Vary your openings. Be specific about features being worked on.
-Never include file paths, UUIDs, or technical identifiers.
+Vary your openings. Be specific about features being worked on, described in plain human language.
+Describe WHAT is happening and WHY, not implementation specifics.
+NEVER include: function names, line numbers, variable names, file paths, URLs, port numbers, code snippets, method calls, CSS properties, or any token that only makes sense when reading code.
+BAD: "Updating the renderHistory function on line 338 to fix the nth-child CSS selector"
+GOOD: "Fixing a display bug so newer messages appear brighter and older ones fade out"
 NEVER use emojis. Plain text only, no emoji characters whatsoever.
 Respond with ONLY the narration text.
 
@@ -58,10 +67,29 @@ Recent activity:
 ${activity}`;
 }
 
+function wordCount(text) {
+  if (!text) return 0;
+  return text.split(/\s+/).filter(w => w.length > 0).length;
+}
+
 function truncate(text, maxWords = 100) {
-  const words = text.split(/\s+/);
-  if (words.length <= maxWords) return text;
-  return words.slice(0, maxWords).join(" ") + "...";
+  if (!text) return "";
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  if (words.length <= maxWords) return text.trim();
+  // Always prefer ending at a sentence boundary — even if it means fewer words.
+  // Search within the word limit for the last sentence-ending punctuation.
+  const limited = words.slice(0, maxWords).join(" ");
+  const lastSentenceEnd = Math.max(
+    limited.lastIndexOf("."),
+    limited.lastIndexOf("!"),
+    limited.lastIndexOf("?")
+  );
+  // Use any sentence boundary we can find (no minimum threshold)
+  if (lastSentenceEnd > 0) {
+    return limited.slice(0, lastSentenceEnd + 1).trim();
+  }
+  // No sentence boundary at all — take the words as-is
+  return limited.trim();
 }
 
 export class Summarizer {
@@ -70,8 +98,15 @@ export class Summarizer {
   }
 
   async summarize({ source, context, summary, project, branch }, personality = {}) {
-    // If pre-made summary provided, use it directly
-    if (summary) return summary;
+    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+
+    // If pre-made summary provided, check if it's short enough to use directly
+    if (summary) {
+      const cleaned = cleanForSpeech(summary);
+      if (wordCount(cleaned) <= maxWords) return cleaned;
+      // Too long — feed it to the LLM as context so verbosity controls apply
+      context = cleaned;
+    }
 
     const sourceConfig = this.config[source] || { method: "claude-cli" };
 
@@ -81,11 +116,13 @@ export class Summarizer {
     } else if (sourceConfig.method === "openai") {
       result = await this._openai(context, project, branch, sourceConfig.model, personality);
     } else {
-      // Fallback: just truncate the context
-      result = truncate(context, 25);
+      // Fallback: clean and truncate the context
+      result = truncate(cleanForSpeech(context), maxWords);
     }
 
-    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+    // Clean any remaining markdown/emojis from LLM output
+    result = cleanForSpeech(result);
+
     return truncate(result, maxWords);
   }
 
@@ -99,13 +136,14 @@ export class Summarizer {
       ], { encoding: "utf-8", timeout: 30000 });
       const data = JSON.parse(output);
       const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
-      return truncate(data.result || "", maxWords);
+      return truncate(cleanForSpeech(data.result || ""), maxWords);
     } catch {
       return null; // Nothing to say
     }
   }
 
   async _claudeCli(context, project, branch, personality = {}) {
+    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
     const systemPrompt = buildPrompt(personality);
     const fullPrompt = `${systemPrompt}\n\nProject: ${project || "unknown"}\nBranch: ${branch || "unknown"}\n\nContext:\n${context}`;
     try {
@@ -115,13 +153,14 @@ export class Summarizer {
         fullPrompt
       ], { encoding: "utf-8", timeout: 30000 });
       const data = JSON.parse(output);
-      return data.result || context.slice(0, 100);
+      return data.result || truncate(cleanForSpeech(context), maxWords);
     } catch {
-      return context.slice(0, 100);
+      return truncate(cleanForSpeech(context), maxWords);
     }
   }
 
   async _openai(context, project, branch, model = "gpt-4o-mini", personality = {}) {
+    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
     // Dynamic import to avoid requiring openai when not used
     try {
       const { default: OpenAI } = await import("openai");
@@ -137,9 +176,9 @@ export class Summarizer {
         ],
         max_tokens: [null, 50, 60, 80, 120, 150][personality.verbosity || 2] || 100,
       });
-      return response.choices[0]?.message?.content || context.slice(0, 100);
+      return response.choices[0]?.message?.content || truncate(cleanForSpeech(context), maxWords);
     } catch {
-      return context.slice(0, 100);
+      return truncate(cleanForSpeech(context), maxWords);
     }
   }
 }

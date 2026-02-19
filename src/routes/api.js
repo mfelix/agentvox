@@ -369,6 +369,33 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
     res.json({ ok: true });
   });
 
+  router.delete("/sources/:source", async (req, res) => {
+    const source = req.params.source;
+    if (!source || source.length > 100) {
+      return res.status(400).json({ error: "invalid source" });
+    }
+
+    // Remove from config
+    if (config.voices?.sources) delete config.voices.sources[source];
+    if (config.speed?.sources) delete config.speed.sources[source];
+    if (config.personality?.sources) delete config.personality.sources[source];
+    if (config.sourceNames) delete config.sourceNames[source];
+
+    // Remove from runtime state
+    state.muted.delete(source);
+    state.history = state.history.filter((m) => m.source !== source);
+
+    // Persist
+    const { saveVoiceConfig, saveSpeedConfig, savePersonalityConfig, saveSourceNames } = await import("../config.js");
+    if (config.voices) saveVoiceConfig(config.voices);
+    if (config.speed) saveSpeedConfig(config.speed);
+    if (config.personality) savePersonalityConfig(config.personality);
+    saveSourceNames(config.sourceNames || {});
+
+    state.broadcast("source:removed", { source });
+    res.json({ removed: true, source });
+  });
+
   router.post("/queue/clear", (req, res) => {
     queue.drain();
     state.broadcast("queue:cleared", {});

@@ -1,6 +1,39 @@
 import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 
+/**
+ * Strip emojis, markdown formatting, and other non-speech artifacts from text.
+ * Used both before TTS and when storing spokenText.
+ */
+export function cleanForSpeech(text) {
+  if (!text) return "";
+  return text
+    // Strip all emoji characters (presentation + text-style like ✅ ✓ ⚡ etc.)
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\ufe0f\u20e3\u2600-\u27bf]/gu, "")
+    // Strip markdown headings (## Heading)
+    .replace(/^#{1,6}\s+/gm, "")
+    // Strip markdown horizontal rules (---, ***, ___)
+    .replace(/^[-*_]{3,}\s*$/gm, "")
+    // Strip markdown bold/italic (**text**, *text*, __text__, _text_)
+    .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, "$2")
+    // Strip markdown inline code (`code`)
+    .replace(/`([^`]*)`/g, "$1")
+    // Strip markdown code blocks (```...```)
+    .replace(/```[\s\S]*?```/g, "")
+    // Strip markdown links [text](url) → text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Strip markdown images ![alt](url)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Strip markdown blockquotes (> text)
+    .replace(/^>\s+/gm, "")
+    // Strip markdown list markers (- item, * item, 1. item)
+    .replace(/^[\s]*[-*+]\s+/gm, "")
+    .replace(/^[\s]*\d+\.\s+/gm, "")
+    // Collapse multiple whitespace/newlines into single space
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const DEFAULT_AUDIO = {
   gain: 1.0,
   compressor: false,
@@ -98,8 +131,8 @@ export class TtsEngine {
   async _doSpeak(text, voice, speed, audio) {
     await this.ensureServer();
 
-    // Strip emojis — TTS engines mangle them into nonsense
-    text = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").replace(/\s{2,}/g, " ").trim();
+    // Clean text for speech — strip emojis, markdown, and other non-speech artifacts
+    text = cleanForSpeech(text);
 
     this.speaking = true;
 
