@@ -72,31 +72,48 @@ html, body {
   z-index: 0;
 }
 
-/* Extremely subtle aurora drift */
-.canvas::after {
-  content: '';
+/* Aurora orbs — two independent gradient blobs that orbit each other */
+.aurora-a,
+.aurora-b {
   position: absolute;
   inset: -20%;
-  background: radial-gradient(
-    ellipse 40% 35% at 45% 40%,
-    rgba(167, 139, 250, 0.018) 0%,
-    transparent 50%
-  ),
-  radial-gradient(
-    ellipse 35% 30% at 55% 55%,
-    rgba(96, 165, 250, 0.015) 0%,
-    transparent 50%
-  );
-  animation: aurora 30s ease-in-out infinite alternate;
+  border-radius: 50%;
   z-index: 0;
   pointer-events: none;
 }
 
-@keyframes aurora {
-  0%   { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(2%, -1%) scale(1.02); }
-  66%  { transform: translate(-1%, 1.5%) scale(0.98); }
-  100% { transform: translate(1%, -0.5%) scale(1.01); }
+.aurora-a {
+  background: radial-gradient(
+    ellipse 40% 35% at 50% 50%,
+    rgba(167, 139, 250, 0.025) 0%,
+    transparent 55%
+  );
+  animation: auroraA 24s ease-in-out infinite;
+}
+
+.aurora-b {
+  background: radial-gradient(
+    ellipse 35% 30% at 50% 50%,
+    rgba(96, 165, 250, 0.02) 0%,
+    transparent 55%
+  );
+  animation: auroraB 28s ease-in-out infinite;
+}
+
+@keyframes auroraA {
+  0%   { transform: translate(-4%, -3%) scale(1); }
+  25%  { transform: translate(5%, -1%) scale(1.04); }
+  50%  { transform: translate(3%, 5%) scale(0.97); }
+  75%  { transform: translate(-5%, 3%) scale(1.02); }
+  100% { transform: translate(-4%, -3%) scale(1); }
+}
+
+@keyframes auroraB {
+  0%   { transform: translate(4%, 3%) scale(1.02); }
+  25%  { transform: translate(-3%, 5%) scale(0.96); }
+  50%  { transform: translate(-5%, -2%) scale(1.03); }
+  75%  { transform: translate(3%, -4%) scale(0.98); }
+  100% { transform: translate(4%, 3%) scale(1.02); }
 }
 
 /* All content above the background */
@@ -451,7 +468,7 @@ html, body {
 .source-settings-divider {
   height: 1px;
   background: var(--glass-border);
-  margin: 16px 0 12px;
+  margin: 16px -24px 12px;
 }
 
 /* Remove source button */
