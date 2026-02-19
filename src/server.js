@@ -14,6 +14,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const config = getConfig();
 const PORT = process.env.AGENTVOX_PORT || config.port || 9876;
+const IS_TEST_ENV =
+  process.env.NODE_ENV === "test" ||
+  process.env.VITEST === "true" ||
+  process.env.VITEST_WORKER_ID != null;
+const HOST =
+  process.env.AGENTVOX_BIND_HOST ||
+  (IS_TEST_ENV ? "127.0.0.1" : null) ||
+  config.host ||
+  "127.0.0.1";
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
@@ -101,8 +110,8 @@ wss.on("connection", (ws) => {
   ws.on("close", () => state.wsClients.delete(ws));
 });
 
-const server = httpServer.listen(PORT, "127.0.0.1", () => {
-  console.log(`AgentVox running on http://127.0.0.1:${PORT}`);
+const server = httpServer.listen(PORT, HOST, () => {
+  console.log(`AgentVox running on http://${HOST}:${PORT}`);
 });
 
 export { app, server };

@@ -126,7 +126,19 @@ Every time Claude Code finishes a turn, the hook reads the session transcript, s
 
 ## Integrating with Codex
 
-Use the wrapper script instead of calling `codex` directly:
+### Notify hook (recommended)
+
+Add this to your `~/.codex/config.toml`:
+
+```toml
+notify = ["python3", "~/code/agentvox/hooks/codex-notify.py"]
+```
+
+Codex fires the hook automatically on every `agent-turn-complete` event, passing the assistant's last message, working directory, and session identifiers. No wrapper or alias needed — just use `codex` normally.
+
+### Wrapper script (alternative)
+
+If you prefer to capture the full stdout/stderr instead of relying on the notify payload:
 
 ```bash
 bash ~/code/agentvox/hooks/codex-wrapper.sh "fix the bug"
