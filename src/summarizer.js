@@ -2,11 +2,11 @@ import { execFileSync } from "node:child_process";
 import { cleanForSpeech } from "./tts.js";
 
 const VERBOSITY_PROMPTS = {
-  1: "Maximum 10 words. Ultra-brief. Just the essential fact, nothing more.",
-  2: "Maximum 15 words. Terse and direct. Key facts only.",
-  3: "15-25 words. Standard summary with enough context to understand.",
-  4: "25-40 words. Include detail, reasoning, and what's next.",
-  5: "40-60 words. Full narration with reasoning, detail, and next steps.",
+  1: "Maximum 8 words. Ultra-brief. Just the essential fact, nothing more.",
+  2: "Maximum 12 words. Terse and direct. Key facts only.",
+  3: "12-20 words. Standard summary with enough context to understand.",
+  4: "20-30 words. Include detail, reasoning, and what's next.",
+  5: "30-45 words. Full narration with reasoning, detail, and next steps.",
 };
 
 const VIBE_PROMPTS = {
@@ -34,13 +34,26 @@ function buildPrompt(personality = {}) {
 ${VERBOSITY_PROMPTS[v] || VERBOSITY_PROMPTS[2]}
 ${VIBE_PROMPTS[vibe] || VIBE_PROMPTS.chill}
 ${humorPrompt(humor)}
+
+SIGNAL FILTER — apply this test strictly before generating ANY output:
+Ask: "Did something in the PROJECT actually change, break, ship, or need the developer's hands?"
+If NO → respond with exactly: nothing to report
+If YES → report only that outcome.
+
+What passes the filter:
+- Code was written, fixed, or deleted — describe what and why
+- A build, test, or deploy succeeded or failed — describe the result
+- The developer's input is specifically needed — say exactly what for
+
+What NEVER passes the filter (always "nothing to report"):
+- The agent reading, exploring, searching, planning, or thinking — process is not news
+- The agent lacking permissions, hitting tool errors, or encountering its own limitations — the developer cannot act on this
+- Meta-commentary about the agent's strategy or approach
+- Filler metaphors, cheerleading, or any sentence that could apply to any task generically
+
 NEVER start with "The agent" or "The assistant" or "The coding". Vary your sentence openings.
-Describe WHAT happened in plain human language. Focus on the purpose and outcome, not implementation details.
+Describe WHAT happened in plain human language. Focus on purpose and outcome.
 NEVER include: function names, line numbers, variable names, file paths, URLs, port numbers, code snippets, method calls, CSS properties, or any token that only makes sense when reading code.
-BAD: "Fixed renderHistory at line 338 where slice minus five reverse produces five messages"
-BAD: "Server running at http 127.0.0.1 colon 9876"
-GOOD: "Fixed a bug where the oldest message was showing up brightest instead of fading out"
-GOOD: "The server is back up and ready"
 NEVER use emojis. Plain text only, no emoji characters whatsoever.
 Respond with ONLY the summary text, nothing else.`;
 }
@@ -54,12 +67,27 @@ function buildOmniPrompt(project, branch, activity, personality = {}) {
 ${VERBOSITY_PROMPTS[v] || VERBOSITY_PROMPTS[2]}
 ${VIBE_PROMPTS[vibe] || VIBE_PROMPTS.chill}
 ${humorPrompt(humor)}
+
+SIGNAL FILTER — apply this test strictly before generating ANY output:
+Ask: "Did something in the PROJECT actually change, break, ship, or need the developer's hands?"
+If NO → respond with exactly: nothing to report
+If YES → report only that outcome.
+
+What passes the filter:
+- Code was written, fixed, or deleted — describe what and why
+- A build, test, or deploy succeeded or failed — describe the result
+- The developer's input is specifically needed — say exactly what for
+
+What NEVER passes the filter (always "nothing to report"):
+- The agent reading, exploring, searching, planning, or thinking — process is not news
+- The agent lacking permissions, hitting tool errors, or encountering its own limitations — the developer cannot act on this
+- Meta-commentary about the agent's strategy or approach
+- Filler metaphors, cheerleading, or any sentence that could apply to any task generically
+
 Speak in present tense. NEVER start with "The agent" or "The assistant".
 Vary your openings. Be specific about features being worked on, described in plain human language.
 Describe WHAT is happening and WHY, not implementation specifics.
 NEVER include: function names, line numbers, variable names, file paths, URLs, port numbers, code snippets, method calls, CSS properties, or any token that only makes sense when reading code.
-BAD: "Updating the renderHistory function on line 338 to fix the nth-child CSS selector"
-GOOD: "Fixing a display bug so newer messages appear brighter and older ones fade out"
 NEVER use emojis. Plain text only, no emoji characters whatsoever.
 Respond with ONLY the narration text.
 
@@ -98,7 +126,7 @@ export class Summarizer {
   }
 
   async summarize({ source, context, summary, project, branch }, personality = {}) {
-    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+    const maxWords = [null, 10, 15, 25, 35, 50][personality.verbosity || 2];
 
     // If pre-made summary provided, check if it's short enough to use directly
     if (summary) {
@@ -123,6 +151,9 @@ export class Summarizer {
     // Clean any remaining markdown/emojis from LLM output
     result = cleanForSpeech(result);
 
+    // LLM determined this event is noise — nothing worth reporting
+    if (result && result.toLowerCase().includes("nothing to report")) return null;
+
     return truncate(result, maxWords);
   }
 
@@ -135,7 +166,7 @@ export class Summarizer {
         prompt
       ], { encoding: "utf-8", timeout: 30000 });
       const data = JSON.parse(output);
-      const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+      const maxWords = [null, 10, 15, 25, 35, 50][personality.verbosity || 2];
       return truncate(cleanForSpeech(data.result || ""), maxWords);
     } catch {
       return null; // Nothing to say
@@ -143,7 +174,7 @@ export class Summarizer {
   }
 
   async _claudeCli(context, project, branch, personality = {}) {
-    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+    const maxWords = [null, 10, 15, 25, 35, 50][personality.verbosity || 2];
     const systemPrompt = buildPrompt(personality);
     const fullPrompt = `${systemPrompt}\n\nProject: ${project || "unknown"}\nBranch: ${branch || "unknown"}\n\nContext:\n${context}`;
     try {
@@ -160,7 +191,7 @@ export class Summarizer {
   }
 
   async _openai(context, project, branch, model = "gpt-4o-mini", personality = {}) {
-    const maxWords = [null, 15, 25, 40, 60, 80][personality.verbosity || 2];
+    const maxWords = [null, 10, 15, 25, 35, 50][personality.verbosity || 2];
     // Dynamic import to avoid requiring openai when not used
     try {
       const { default: OpenAI } = await import("openai");
@@ -174,7 +205,7 @@ export class Summarizer {
             content: `Project: ${project || "unknown"}\nBranch: ${branch || "unknown"}\n\nContext:\n${context}`,
           },
         ],
-        max_tokens: [null, 50, 60, 80, 120, 150][personality.verbosity || 2] || 100,
+        max_tokens: [null, 30, 40, 60, 80, 120][personality.verbosity || 2] || 60,
       });
       return response.choices[0]?.message?.content || truncate(cleanForSpeech(context), maxWords);
     } catch {

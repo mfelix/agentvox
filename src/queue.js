@@ -67,6 +67,14 @@ export class PriorityQueue {
     );
   }
 
+  remove(seq) {
+    const idx = this.items.findIndex((item) => item.seq === seq);
+    if (idx === -1) return null;
+    const item = this.items.splice(idx, 1)[0];
+    this._notify("dequeue", item);
+    return item;
+  }
+
   drain() {
     const all = this.pending();
     this.items = [];

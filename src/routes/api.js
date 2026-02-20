@@ -6,6 +6,8 @@ const VALID_TYPES = ["stop", "error", "narration", "info"];
 
 export function createApiRouter({ queue, tts, summarizer, config, state }) {
   const router = Router();
+  let _processChain = Promise.resolve();
+  let _seqCounter = 0;
 
   router.post("/message", async (req, res) => {
     const { source, project, branch, worktree, sessionId, priority, type, context, summary } = req.body;
@@ -44,11 +46,17 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
       receivedAt: new Date().toISOString(),
     };
 
+    message.seq = _seqCounter++;
     queue.enqueue(message);
     state.broadcast("message:new", message);
 
-    // Process asynchronously — queued so messages speak one at a time
-    processMessage(message, { queue, tts, summarizer, config, state });
+    // Process sequentially — each message fully summarizes and speaks before the
+    // next one starts, guaranteeing arrival-order playback even when multiple
+    // agents/subagents send messages in rapid succession.
+    _processChain = _processChain
+      .then(() => _processMessage(message, { tts, summarizer, config, state }))
+      .catch((err) => console.error("Speech processing error:", err))
+      .finally(() => queue.remove(message.seq));
 
     res.status(202).json({ queued: true, id: message.sessionId });
   });
@@ -439,18 +447,12 @@ export function createApiRouter({ queue, tts, summarizer, config, state }) {
   return router;
 }
 
-function processMessage(message, deps) {
-  // TTS serialization is handled inside TtsEngine._speechQueue — all callers
-  // (API messages, omni narration, voice preview) are automatically serialized.
-  _processMessage(message, deps).catch(
-    (err) => console.error("Speech processing error:", err)
-  );
-}
-
 async function _processMessage(message, { tts, summarizer, config, state }) {
-  // Check mute
-  if (state.globalMute) return;
-  if (state.muted.has(message.source) || state.muted.has(message.project)) return;
+  // Check mute — still remove from frontend queue so items don't pile up
+  if (state.globalMute || state.muted.has(message.source) || state.muted.has(message.project)) {
+    state.broadcast("message:skipped", message);
+    return;
+  }
 
   // Resolve voice, speed, and personality
   const { resolveVoice, resolveSpeed, resolvePersonality, resolveSourceName } = await import("../config.js");
@@ -460,6 +462,12 @@ async function _processMessage(message, { tts, summarizer, config, state }) {
 
   // Summarize with personality
   let spokenText = await summarizer.summarize(message, personality);
+
+  // LLM determined this event is noise — skip it entirely
+  if (!spokenText) {
+    state.broadcast("message:skipped", message);
+    return;
+  }
 
   // Prepend source name if announceSource is enabled
   if (personality.announceSource) {
@@ -474,8 +482,10 @@ async function _processMessage(message, { tts, summarizer, config, state }) {
   if (state.history.length > 200) state.history.shift();
 
   // Re-check mute — summarization may have taken a while
-  if (state.globalMute) return;
-  if (state.muted.has(message.source) || state.muted.has(message.project)) return;
+  if (state.globalMute || state.muted.has(message.source) || state.muted.has(message.project)) {
+    state.broadcast("message:skipped", message);
+    return;
+  }
 
   // Speak with audio processing
   const audio = {

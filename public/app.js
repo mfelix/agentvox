@@ -9,7 +9,7 @@ const state = {
   muted: [],
   globalMute: false,
   omniActive: false,
-  sources: new Set(),
+  sources: new Map(),  // source -> lastSeen timestamp
   projects: new Set(),
   connected: false,
   voices: { default: "jean", sources: {}, projects: {} },
@@ -76,7 +76,7 @@ function handleEvent(evt, data) {
       state.sourceNames = data.sourceNames || {};
       // Collect known sources and projects
       state.history.forEach((m) => {
-        if (m.source) state.sources.add(m.source);
+        if (m.source) state.sources.set(m.source, Date.parse(m.receivedAt) || Date.now());
         if (m.project && m.project !== "unknown") state.projects.add(m.project);
       });
       // Initialize audio settings
@@ -89,11 +89,16 @@ function handleEvent(evt, data) {
       break;
 
     case "message:new":
-      if (data.source) state.sources.add(data.source);
+      if (data.source) state.sources.set(data.source, Date.now());
       if (data.project && data.project !== "unknown") state.projects.add(data.project);
       state.queue.push(data);
       renderQueue();
       renderSources();
+      break;
+
+    case "message:skipped":
+      state.queue = state.queue.filter((m) => m.sessionId !== data.sessionId);
+      renderQueue();
       break;
 
     case "speaking:start":
@@ -107,7 +112,7 @@ function handleEvent(evt, data) {
     case "speaking:done":
       state.speaking = null;
       state.history.push(data);
-      if (data.source) state.sources.add(data.source);
+      if (data.source) state.sources.set(data.source, Date.now());
       if (data.project && data.project !== "unknown") state.projects.add(data.project);
       renderSpeaking();
       renderHistory();
@@ -364,7 +369,7 @@ function renderSources() {
   const container = document.getElementById("source-orbs");
   if (!container) return;
 
-  const allSources = [...state.sources];
+  const allSources = [...state.sources.keys()];
   const allProjects = [...state.projects];
 
   if (allSources.length === 0 && allProjects.length === 0) {
@@ -464,7 +469,6 @@ function buildOrbHtml(name, type) {
         <span class="mute-source-label">Mute source</span>
         <button class="toggle source-mute-toggle${isMuted ? " on" : ""}" data-source="${escapedName}" aria-label="Mute source"></button>
       </div>
-      <div class="source-settings-divider"></div>
       <button class="source-remove-btn" data-source="${escapedName}" aria-label="Remove source">Remove source</button>
     </div>
   </div>`;
@@ -805,6 +809,13 @@ document.getElementById("queue-popup").addEventListener("click", (e) => {
   e.stopPropagation();
 });
 
+// Queue clear button
+document.getElementById("queue-clear-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  clearQueue();
+  document.getElementById("queue-popup").classList.remove("open");
+});
+
 // --- Event Delegation for Source Orbs ---
 
 document.getElementById("source-orbs").addEventListener("click", (e) => {
@@ -931,5 +942,19 @@ Object.assign(window, {
   toggleMute, changeVoice, changeSpeed, changePersonality,
   startRename, handleRenameKey, handleRenameBlur, toggleAnnounce,
 });
+
+// Auto-expire source orbs after 10 minutes of inactivity
+const SOURCE_EXPIRY_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [source, lastSeen] of state.sources) {
+    if (now - lastSeen > SOURCE_EXPIRY_MS) {
+      state.sources.delete(source);
+      changed = true;
+    }
+  }
+  if (changed) renderSources();
+}, 30000);
 
 connect();
